@@ -131,6 +131,18 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
         with self.skip_oserror('pep8 unavailable'):
             self.assert_success(cmd, 'check failure')
 
+    def test_pyflakes(self):
+        """Test with Pyflakes.
+
+        :raise unittest.SkipTest: if Pyflakes is not available
+        :raise AssertionError: if the test fails
+
+        """
+        # Do not use the API to be consistent throughout the module.
+        cmd = ['pyflakes'] + [_findsrcfile(name) for name in TESTMODNAMES]
+        with self.skip_oserror('Pyflakes unavailable'):
+            self.assert_success(cmd, 'check failure')
+
     def test_pylint(self):
         """Test with Pylint.
 
