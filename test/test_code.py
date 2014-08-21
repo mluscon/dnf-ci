@@ -18,6 +18,8 @@
 
 """Test quality of the source code.
 
+All tested modules must be importable.
+
 :var TESTMODNAMES: names of the readable modules to be tested
 :type TESTMODNAMES: set[str]
 
@@ -27,7 +29,9 @@
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
+import contextlib
 import doctest
+import subprocess
 import unittest
 
 
@@ -54,6 +58,52 @@ def load_tests(loader, standard_tests, pattern):  # pylint: disable=W0613
     standard_tests.addTests(
         doctest.DocTestSuite(modname) for modname in TESTMODNAMES)
     return standard_tests
+
+
+class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
+
+    """Tests running selected code checkers."""
+
+    @contextlib.contextmanager
+    def skip_oserror(self, reason):
+        """Return a context manager that skips potential :exc:`OSError`.
+
+        :param reason: explanation of the skip
+        :type reason: str
+        :return: the context manager
+        :rtype: contextmanager
+
+        """
+        try:
+            yield
+        except OSError:
+            self.skipTest(reason)
+
+    def assert_success(self, cmd, msg=None):
+        """Assert that a command returns zero exit status.
+
+        :param cmd: the command line vector
+        :type cmd: list[str]
+        :param msg: error message
+        :type msg: str | None
+        :raise OSError: if the command cannot be executed
+        :raise AssertionError: if the assertion fails
+
+        """
+        msg_ = self._formatMessage(msg, 'non-zero exit status')
+        self.assertEqual(subprocess.call(cmd), 0, msg_)
+
+    def test_pylint(self):
+        """Test with Pylint.
+
+        :raise unittest.SkipTest: if Pylint is not available
+        :raise AssertionError: if the test fails
+
+        """
+        # Do not use the API to avoid trouble with incompatible licenses.
+        cmd = ['pylint', '--reports=n'] + list(TESTMODNAMES)
+        with self.skip_oserror('Pylint unavailable'):
+            self.assert_success(cmd, 'check failure')
 
 
 if __name__ == '__main__':

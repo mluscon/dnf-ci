@@ -1,0 +1,19 @@
+# -*- coding: utf-8 -*-
+
+[BASIC]
+
+# List of builtins function names that should not be used, separated by a comma
+bad-functions=map,filter,apply,file
+
+# Regular expression which should only match function or class names that do not require a docstring.
+# No name can match this regular expression.
+no-docstring-rgx=\+
+
+
+[FORMAT]
+
+# Maximum number of characters on a single line.
+max-line-length=79
+
+# List of optional constructs for which whitespace checking is disabled
+no-space-check=
