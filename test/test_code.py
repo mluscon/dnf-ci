@@ -107,6 +107,18 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
         msg_ = self._formatMessage(msg, 'non-zero exit status')
         self.assertEqual(subprocess.call(cmd), 0, msg_)
 
+    def test_pep257(self):
+        """Test with pep257.
+
+        :raise unittest.SkipTest: if pep257 is not available
+        :raise AssertionError: if the test fails
+
+        """
+        # Do not use the API to be consistent throughout the module.
+        cmd = ['pep257'] + [_findsrcfile(name) for name in TESTMODNAMES]
+        with self.skip_oserror('pep257 unavailable'):
+            self.assert_success(cmd, 'check failure')
+
     def test_pep8(self):
         """Test with pep8.
 
