@@ -1,0 +1,22 @@
+.. -*- coding: utf-8 -*-
+
+DNF continuous integration support.
+
+I created this project for our own purpose. On the other hand, I will be
+happy if it becomes useful to someone else. Therefore, do not hesitate
+to fork or contribute. The primary goal is to have everything simple,
+perfect and flawless as much as possible. So, any feedback is welcome
+and I hope that every contribution will keep the desired quality.
+
+
+Licensing
+---------
+
+Please see the license file.
+
+
+Contacts
+--------
+
+Please submit any feedback (feature requests, bug reports, etc.) via the
+issue tracking system on the project website.
