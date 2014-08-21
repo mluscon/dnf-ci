@@ -1,6 +1,8 @@
 .. -*- coding: utf-8 -*-
 
 - If anything is changed, :code:`setup.py check test` must be called.
+- If a source code is changed, the quality of the file must be checked.
+- If a source code is changed, PyCharm exclusions must be reassessed.
 - If the number of doctests in a source file is changed,
   :code:`doctest.testmod()` must be taken into account.
 - If the language of a file does not prefer a way to write something,
