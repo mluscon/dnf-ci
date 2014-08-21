@@ -33,6 +33,7 @@ import contextlib
 import doctest
 import importlib
 import inspect
+import re
 import subprocess
 import unittest
 
@@ -106,6 +107,37 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
         """
         msg_ = self._formatMessage(msg, 'non-zero exit status')
         self.assertEqual(subprocess.call(cmd), 0, msg_)
+
+    def assert_stdout(self, cmd, regex, msg=None):
+        """Assert that a command's standard output matches a reg. expression.
+
+        :param cmd: the command line vector which returns zero code
+        :type cmd: list[str]
+        :param regex: the regular expression
+        :type regex: regex
+        :param msg: error message
+        :type msg: str | None
+        :raise OSError: if the command cannot be executed
+        :raise AssertionError: if the assertion fails
+
+        """
+        msg_ = self._formatMessage(msg, 'standard output mismatch')
+        self.assertRegex(subprocess.check_output(cmd), regex, msg_)
+
+    def test_mccabe(self):
+        """Test with McCabe complexity checker.
+
+        :raise unittest.SkipTest: if McCabe complexity checker is not available
+        :raise AssertionError: if the test fails
+
+        """
+        regex = re.compile(b'^$')
+        for modname in TESTMODNAMES:
+            filename = _findsrcfile(modname)
+            # Do not use the API to be consistent throughout the module.
+            cmd = ['mccabe', '--min=8', filename]
+            with self.skip_oserror('McCabe complexity checker unavailable'):
+                self.assert_stdout(cmd, regex, 'check failure: ' + filename)
 
     def test_pep257(self):
         """Test with pep257.
