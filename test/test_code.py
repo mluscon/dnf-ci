@@ -31,6 +31,8 @@ from __future__ import unicode_literals
 
 import contextlib
 import doctest
+import importlib
+import inspect
 import subprocess
 import unittest
 
@@ -39,6 +41,18 @@ TESTMODNAMES = {
     'setup',
     'test.__init__',  # some tools may walk packages recursively -- avoid that
     'test.test_code'}
+
+
+def _findsrcfile(name):
+    """Find source file an importable non-built-in module.
+
+    :param name: name of the module
+    :type name: str
+    :return: name of the source file
+    :rtype: str
+
+    """
+    return inspect.getsourcefile(importlib.import_module(name))
 
 
 # noinspection PyUnusedLocal
@@ -92,6 +106,18 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
         """
         msg_ = self._formatMessage(msg, 'non-zero exit status')
         self.assertEqual(subprocess.call(cmd), 0, msg_)
+
+    def test_pep8(self):
+        """Test with pep8.
+
+        :raise unittest.SkipTest: if pep8 is not available
+        :raise AssertionError: if the test fails
+
+        """
+        # Do not use the API to be consistent throughout the module.
+        cmd = ['pep8'] + [_findsrcfile(name) for name in TESTMODNAMES]
+        with self.skip_oserror('pep8 unavailable'):
+            self.assert_success(cmd, 'check failure')
 
     def test_pylint(self):
         """Test with Pylint.
