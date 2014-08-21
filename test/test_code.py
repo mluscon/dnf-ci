@@ -29,12 +29,16 @@ All tested modules must be importable.
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
+import codecs
 import contextlib
 import doctest
 import importlib
 import inspect
+import os
 import re
 import subprocess
+import sys
+import tempfile
 import unittest
 
 
@@ -93,6 +97,49 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
             yield
         except OSError:
             self.skipTest(reason)
+
+    @staticmethod
+    def apidoc(modnames, dirname):
+        """Create Sphinx documentation sources for modules.
+
+        :param modnames: names of the modules
+        :type modnames: collections.abc.Iterable[str]
+        :param dirname: name of the writable sources directory
+        :type dirname: str
+
+        """
+        rootname = lambda fname: os.path.splitext(os.path.basename(fname))[0]
+        toc_fn = os.path.join(dirname, 'contents.rst')
+        with codecs.open(toc_fn, 'w', encoding='utf_8') as tocfile:
+            tocfile.write('.. toctree::\n')
+            for modname in modnames:
+                mod_fn = os.path.join(dirname, modname + '.rst')
+                with codecs.open(mod_fn, 'w', encoding='utf_8') as modfile:
+                    modfile.write(
+                        modname + '\n' +
+                        ('=' * len(modname)) + '\n'
+                        '.. automodule:: ' + modname + '\n'
+                        '    :members:\n'
+                        '    :undoc-members:\n'
+                        '    :private-members:\n'
+                        '    :special-members:\n')
+                tocfile.write('   ' + rootname(mod_fn) + '\n')
+        conf_fn = os.path.join(dirname, 'conf.py')
+        with codecs.open(conf_fn, 'w', encoding='utf_8') as conffile:
+            conffile.write(
+                'extensions = [\n'
+                '    "sphinx.ext.autodoc",\n'
+                '    "sphinx.ext.intersphinx"]\n'
+                'nitpick_ignore = [\n'
+                '    ("py:obj", "collections.abc.Iterable[str]"),\n'
+                '    ("py:obj", "list[str]"),\n'
+                '    ("py:obj", "regex"),\n'
+                '    ("py:obj", "str | None")]\n'
+                'intersphinx_mapping = {\n'
+                '    "python":\n'
+                '        ("http://docs.python.org/' +
+                str(sys.version_info[0]) + '.' + str(sys.version_info[1]) +
+                '/", None)}\n')
 
     def assert_success(self, cmd, msg=None):
         """Assert that a command returns zero exit status.
@@ -210,6 +257,20 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
         cmd = ['pylint', '--reports=n'] + list(TESTMODNAMES)
         with self.skip_oserror('Pylint unavailable'):
             self.assert_success(cmd, 'check failure')
+
+    def test_sphinx(self):
+        """Test with Sphinx.
+
+        :raise unittest.SkipTest: if Sphinx is not available
+        :raise AssertionError: if the test fails
+
+        """
+        with tempfile.TemporaryDirectory() as dirname:
+            self.apidoc(TESTMODNAMES, dirname)
+            # Do not use the API to be consistent throughout the module.
+            cmd = ['sphinx-build', '-E', '-n', '-W', dirname, dirname]
+            with self.skip_oserror('Sphinx unavailable'):
+                self.assert_success(cmd, 'check failure')
 
 
 if __name__ == '__main__':

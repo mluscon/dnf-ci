@@ -3,6 +3,7 @@
 - If anything is changed, :code:`setup.py check test` must be called.
 - If a source code is changed, the quality of the file must be checked.
 - If a source code is changed, Pylint exclusions must be reassessed.
+- If a source code is changed, Sphinx exclusions must be reassessed.
 - If a source code is changed, PyCharm exclusions must be reassessed.
 - If a source code is changed, Clone Digger expectations must be
   reassessed.
