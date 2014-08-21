@@ -1,1 +1,12 @@
 .. -*- coding: utf-8 -*-
+
+- If the number of doctests in a source file is changed,
+  :code:`doctest.testmod()` must be taken into account.
+- If the language of a file does not prefer a way to write something,
+  the most backwards-compatible approach must be chosen.
+- If the intended interpreter of a file is changed, the shebang must be
+  adjusted.
+- If the intent of a file is changed, the execute permission must be
+  reassessed.
+- If the README file is changed, the first paragraph must represent a
+  long description of the project.
