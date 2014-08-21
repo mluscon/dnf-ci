@@ -19,7 +19,7 @@
 """Entry point to building, distributing, and installing the project.
 
 The current working directory must contain the readable "README" file encoded
-in UTF-8.
+in UTF-8. The "test" package must be importable.
 
 """
 
@@ -75,5 +75,6 @@ if __name__ == '__main__':
             'Operating System :: OS Independent',
             'Programming Language :: Python :: ' +
             str(sys.version_info.major) + '.' + str(sys.version_info.minor)],
-        setup_requires=['docutils', 'setuptools']
+        setup_requires=['docutils', 'setuptools'],
+        test_suite='test'
     )
