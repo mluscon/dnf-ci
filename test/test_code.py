@@ -124,6 +124,30 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
         msg_ = self._formatMessage(msg, 'standard output mismatch')
         self.assertRegex(subprocess.check_output(cmd), regex, msg_)
 
+    def test_clonedigger(self):
+        """Test with Clone Digger.
+
+        :raise unittest.SkipTest: if Clone Digger is not available
+        :raise AssertionError: if the test fails
+
+        """
+        # Do not use the API to avoid trouble with incompatible licenses.
+        cmd = ['clonedigger', '--no-recursion', '--output=clonedigger.html',
+               '--force'] + [_findsrcfile(name) for name in TESTMODNAMES]
+        regex = re.compile(
+            b'^(Parsing  .+ \\.\\.\\. done\n)+\\d+ sequences\naverage '
+            b'sequence length: \\d+\\.\\d+\nmaximum sequence length: \\d+\n'
+            b'Number of statements:  \\d+\nCalculating size for each statement'
+            b'\\.\\.\\. done\nBuilding statement hash\\.\\.\\. done\nNumber '
+            b'of different hash values:  \\d+\nBuilding patterns\\.\\.\\. \\'
+            b'd+ patterns were discovered\nChoosing pattern for each statement'
+            b'\\.\\.\\. done\nFinding similar sequences of statements\\.\\.\\.'
+            b' \\d+  sequences were found\nRefining candidates\\.\\.\\. 0 '
+            b'clones were found\nRemoving dominated clones\\.\\.\\. 0 clones '
+            b'were removed\n$')
+        with self.skip_oserror('Clone Digger unavailable'):
+            self.assert_stdout(cmd, regex, 'incorrect number of clones')
+
     def test_mccabe(self):
         """Test with McCabe complexity checker.
 
