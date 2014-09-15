@@ -142,6 +142,7 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
                 '    ("py:obj", "list[int] | None"),\n'
                 '    ("py:obj", "list[str]"),\n'
                 '    ("py:obj", "regex"),\n'
+                '    ("py:obj", "repo2source"),\n'
                 '    ("py:obj", "str | None")]\n'
                 'intersphinx_mapping = {\n'
                 '    "python":\n'

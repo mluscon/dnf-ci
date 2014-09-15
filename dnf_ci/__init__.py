@@ -40,3 +40,17 @@ def uncommitted_changes(repository):
     dicmd = ['git', '-C', repository, 'diff-index', '--quiet', 'HEAD', '--']
     subprocess.call(uicmd)
     return bool(subprocess.call(dfcmd) or subprocess.call(dicmd))
+
+
+def clone(source, target):
+    """Clone a Git repository.
+
+    "git" executable must be available.
+
+    :param source: name of the readable source Git repository
+    :type source: str
+    :param target: name of the writable non-existent target directory
+    :type target: str
+
+    """
+    subprocess.call(['git', 'clone', '--quiet', source, target])

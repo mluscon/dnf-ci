@@ -22,6 +22,7 @@ from __future__ import absolute_import
 from __future__ import unicode_literals
 
 import contextlib
+import os
 import tempfile
 import unittest.mock
 
@@ -32,6 +33,8 @@ class _GitStub(object):  # pylint: disable=too-few-public-methods
 
     """Testing stub of the "git" executable.
 
+    :ivar test: the current test
+    :type test: test.test_unit.GitExecutableTestCase
     :ivar difffiles_repo2status: exit status of "git diff-files" command for
        each repository
     :type difffiles_repo2status: dict[str, int]
@@ -41,9 +44,11 @@ class _GitStub(object):  # pylint: disable=too-few-public-methods
 
     """
 
-    def __init__(self, difffiles, diffindex):
+    def __init__(self, test, difffiles, diffindex):
         """Initialize the stub.
 
+        :param test: the current test
+        :type test: test.test_unit.GitExecutableTestCase
         :param difffiles_repo2status: exit status of "git diff-files" command
            for each repository
         :type difffiles_repo2status: dict[str, int]
@@ -52,6 +57,7 @@ class _GitStub(object):  # pylint: disable=too-few-public-methods
         :type diffindex_repo2statuses: dict[str, list[int]]
 
         """
+        self.test = test
         self.difffiles_repo2status = difffiles
         self.diffindex_repo2statuses = diffindex
 
@@ -64,23 +70,36 @@ class _GitStub(object):  # pylint: disable=too-few-public-methods
         :rtype: int
 
         """
-        if args[3] == 'update-index':
-            statuses = self.diffindex_repo2statuses[args[2]]
-            if len(statuses) > 1:
-                statuses.pop(0)
-        elif args[3] == 'diff-files':
-            return self.difffiles_repo2status[args[2]]
-        elif args[3] == 'diff-index':
-            return self.diffindex_repo2statuses[args[2]][0]
+        if args[1] == 'clone':
+            self.test.repo2source[args[4]] = args[3]
+            return 0
+        else:
+            if args[3] == 'update-index':
+                statuses = self.diffindex_repo2statuses[args[2]]
+                if len(statuses) > 1:
+                    statuses.pop(0)
+            elif args[3] == 'diff-files':
+                return self.difffiles_repo2status[args[2]]
+            elif args[3] == 'diff-index':
+                return self.diffindex_repo2statuses[args[2]][0]
 
 
 class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
 
-    """Git executable test case."""
+    """Git executable test case.
 
-    @staticmethod
+    :ivar repo2source: source repository for each repository
+    :type repo2source: dict[str, str]
+
+    """
+
+    def setUp(self):
+        """Prepare the test fixture."""
+        super().setUp()
+        self.repo2source = {}
+
     @contextlib.contextmanager
-    def patch(repository, difffiles=0, diffindex=None):
+    def patch(self, repository, difffiles=0, diffindex=None):
         """Return a context manager that patch all the relevant functions.
 
         :param repository: name of a repository used
@@ -94,8 +113,9 @@ class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
         :rtype: contextmanager
 
         """
-        files, index = {repository: difffiles}, {repository: diffindex or [0]}
-        with unittest.mock.patch('subprocess.call', _GitStub(files, index)):
+        git = _GitStub(
+            self, {repository: difffiles}, {repository: diffindex or [0]})
+        with unittest.mock.patch('subprocess.call', git):
             yield
 
     def test_uncommitted_changes(self):
@@ -137,6 +157,21 @@ class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
         with self.patch(tempfile.gettempdir(), diffindex=[1, 0]):
             found = dnf_ci.uncommitted_changes(tempfile.gettempdir())
         self.assertFalse(found, 'not refreshed')
+
+    def test_clone(self):
+        """Test cloning.
+
+        :raise AssertionError: if the test fails
+
+        """
+        with self.patch(tempfile.gettempdir()):
+            dnf_ci.clone(
+                os.path.join(tempfile.gettempdir(), 'src'),
+                os.path.join(tempfile.gettempdir(), 'tgt'))
+        self.assertEqual(
+            self.repo2source[os.path.join(tempfile.gettempdir(), 'tgt')],
+            os.path.join(tempfile.gettempdir(), 'src'),
+            'not cloned')
 
 
 if __name__ == '__main__':
