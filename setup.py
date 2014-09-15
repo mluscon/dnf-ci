@@ -19,7 +19,8 @@
 """Entry point to building, distributing, and installing the project.
 
 The current working directory must contain the readable "README" file encoded
-in UTF-8. The "test" package must be importable.
+in UTF-8 and the "dnf_ci" package directory. The "dnf_ci" and "test" packages
+must be importable.
 
 """
 
@@ -70,11 +71,12 @@ if __name__ == '__main__':
         long_description=README,
         keywords=['DNF', 'continuous integration'],
         classifiers=[
-            'Development Status :: 1 - Planning',
+            'Development Status :: 2 - Pre-Alpha',
             'License :: OSI Approved :: Apache Software License',
             'Operating System :: OS Independent',
             'Programming Language :: Python :: ' +
             str(sys.version_info.major) + '.' + str(sys.version_info.minor)],
         setup_requires=['docutils', 'setuptools'],
+        packages=['dnf_ci'],
         test_suite='test'
     )

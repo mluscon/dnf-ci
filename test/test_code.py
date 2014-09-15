@@ -43,9 +43,12 @@ import unittest
 
 
 TESTMODNAMES = {
+    # some tools may walk packages recursively -- avoid that
+    'dnf_ci.__init__',
     'setup',
-    'test.__init__',  # some tools may walk packages recursively -- avoid that
-    'test.test_code'}
+    'test.__init__',
+    'test.test_code',
+    'test.test_unit'}
 
 
 def _findsrcfile(name):
@@ -132,6 +135,11 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
                 '    "sphinx.ext.intersphinx"]\n'
                 'nitpick_ignore = [\n'
                 '    ("py:obj", "collections.abc.Iterable[str]"),\n'
+                '    ("py:obj", "dict[str, int]"),\n'
+                '    ("py:obj", "dict[str, list[int]]"),\n'
+                '    ("py:obj", "difffiles_repo2status"),\n'
+                '    ("py:obj", "diffindex_repo2statuses"),\n'
+                '    ("py:obj", "list[int] | None"),\n'
                 '    ("py:obj", "list[str]"),\n'
                 '    ("py:obj", "regex"),\n'
                 '    ("py:obj", "str | None")]\n'
