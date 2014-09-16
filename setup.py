@@ -75,7 +75,8 @@ if __name__ == '__main__':
             'License :: OSI Approved :: Apache Software License',
             'Operating System :: OS Independent',
             'Programming Language :: Python :: ' +
-            str(sys.version_info.major) + '.' + str(sys.version_info.minor)],
+            str(sys.version_info.major) + '.' + str(sys.version_info.minor),
+            'Topic :: Software Development :: Build Tools'],
         setup_requires=['docutils', 'setuptools'],
         packages=['dnf_ci'],
         test_suite='test'

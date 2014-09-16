@@ -19,8 +19,11 @@
 
 
 from __future__ import absolute_import
+from __future__ import print_function
 from __future__ import unicode_literals
 
+import fileinput
+import os
 import subprocess
 
 
@@ -54,3 +57,40 @@ def clone(source, target):
 
     """
     subprocess.call(['git', 'clone', '--quiet', source, target])
+
+
+def build_dnf(source, destination, root):
+    """Build a SRPM from a DNF Git repository.
+
+    It is assumed that the workflow is to build DNF, run "package/archive",
+    change the value of "gitrev" variable at the first line of
+    "package/dnf.spec" to the output of "package/archive" and run Mock with
+    the sources path set to "$HOME/rpmbuild/SOURCES". "cmake" and "mock"
+    executables must be available. The root is initialized. This function
+    cannot be called by a superuser.
+
+    :param source: name of the readable and writable source Git repository
+    :type source: str
+    :param destination: name of a writable directory for the results
+    :type destination: str
+    :param root: name of a writable Mock root
+    :type root: str
+
+    """
+    subprocess.call(['cmake', '.'], cwd=source)
+
+    archive_fn = os.path.join(source, 'package', 'archive')
+    revision = subprocess.check_output([archive_fn], cwd=source).decode()[:-1]
+
+    spec_fn = os.path.join(source, 'package', 'dnf.spec')
+    with fileinput.FileInput(spec_fn, inplace=True) as spec_file:
+        next(spec_file)  # Skip the "gitrev" line.
+        print('%global gitrev ' + revision)
+        for line in spec_file:
+            print(line[:-1])
+
+    buildcmd = [
+        'mock', '--quiet', '--root=' + root, '--resultdir=' + destination,
+        '--no-cleanup-after', '--buildsrpm', '--spec=' + spec_fn,
+        '--sources=' + os.path.expandvars('$HOME/rpmbuild/SOURCES')]
+    subprocess.call(buildcmd)
