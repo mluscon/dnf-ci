@@ -286,6 +286,46 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
         return b''
 
 
+class _MockchainStub(object):  # pylint: disable=too-few-public-methods
+
+    """Testing stub of the "mockchain" executable.
+
+    :ivar test: the current test
+    :type test: test.test_unit.MockchainTestCase
+    :ivar failing: names of SRPMS that cannot be built
+    :type failing: str[str]
+
+    """
+
+    def __init__(self, test, failing):
+        """Initialize the stub.
+
+        :param test: the current test
+        :type test: test.test_unit.MockchainTestCase
+        :param failing: names of SRPMS that cannot be built
+        :type failing: set[str]
+
+        """
+        super().__init__()
+        self.test = test
+        self.failing = failing
+
+    def __call__(self, args):
+        """Call the executable with command line arguments.
+
+        :param args: the arguments
+        :type args: list[str]
+        :return: the exit status
+        :rtype: int
+
+        """
+        srpms = set(args[3:])
+        if srpms & self.failing:
+            return 1
+        self.test.dn2tuple[args[2][12:]] = (srpms, args[1][7:])
+        return 0
+
+
 class _SubprocessStub(object):
 
     """Testing stub of the "subprocess" module.
@@ -493,6 +533,66 @@ class DNFBuildTestCase(unittest.TestCase):  # pylint: disable=R0904
             self.dn2tuple[destination],
             ('%global gitrev bcDE123\nrest of original\n', 'bcDE123', 'root'),
             'not built')
+
+
+class MockchainTestCase(unittest.TestCase):  # pylint: disable=R0904
+
+    """Mockchain executable test case.
+
+    :ivar dn2tuple: names of RPMS and Mock root for name of each directory
+       containing the made SRPMs
+    :type dn2tuple: dict[str, tuple[set[str], str]]
+
+    """
+
+    def setUp(self):
+        """Prepare the test fixture."""
+        super().setUp()
+        self.dn2tuple = {}
+
+    @contextlib.contextmanager
+    def patch(self, failing=None):
+        """Return a context manager that patch all the relevant functions.
+
+        :param failing: names of SRPMS that cannot be built
+        :type failing: set[str]
+        :return: the context manager
+        :rtype: contextmanager
+
+        """
+        mockchain = _MockchainStub(self, failing or set())
+        with unittest.mock.patch('subprocess.call', mockchain):
+            yield
+
+    def test_build_rpms_buildable(self):
+        """Test building with a buildable SRPM.
+
+        :raise AssertionError: if the test fails
+
+        """
+        with self.patch():
+            dnf_ci.build_rpms(
+                [os.path.join(tempfile.gettempdir(), 'a.src.rpm'),
+                 os.path.join(tempfile.gettempdir(), 'b.src.rpm')],
+                os.path.join(tempfile.gettempdir(), 'build'),
+                'root')
+        self.assertEqual(
+            self.dn2tuple[os.path.join(tempfile.gettempdir(), 'build')],
+            ({os.path.join(tempfile.gettempdir(), 'a.src.rpm'),
+              os.path.join(tempfile.gettempdir(), 'b.src.rpm')},
+             'root'),
+            'not built')
+
+    def test_build_rpms_nonbuildable(self):
+        """Test building with a non-buildable SRPM.
+
+        :raise AssertionError: if the test fails
+
+        """
+        srpm = os.path.join(tempfile.gettempdir(), 'a.src.rpm')
+        with self.assertRaises(ValueError, msg='not raised'):
+            with self.patch({srpm}):
+                dnf_ci.build_rpms([srpm], 'build', 'root')
 
 
 if __name__ == '__main__':

@@ -94,3 +94,24 @@ def build_dnf(source, destination, root):
         '--no-cleanup-after', '--buildsrpm', '--spec=' + spec_fn,
         '--sources=' + os.path.expandvars('$HOME/rpmbuild/SOURCES')]
     subprocess.call(buildcmd)
+
+
+def build_rpms(sources, destination, root):
+    """Build the RPMs from SRPMs.
+
+    "mockchain" executable must be available. *destination* must be readable by
+    other users. This function cannot be called by a superuser.
+
+    :param sources: names of the readable SRPM files
+    :type sources: list[str]
+    :param destination: name of a writable directory for the results
+    :type destination: str
+    :param root: name of a writable Mock root
+    :type root: str
+    :raise ValueError: if the build fails
+
+    """
+    cmd = ([
+        'mockchain', '--root=' + root, '--localrepo=' + destination] + sources)
+    if subprocess.call(cmd):
+        raise ValueError('build failed')
