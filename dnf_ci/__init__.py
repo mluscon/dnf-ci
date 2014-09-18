@@ -23,6 +23,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import fileinput
+import itertools
 import os
 import subprocess
 
@@ -115,3 +116,73 @@ def build_rpms(sources, destination, root):
         'mockchain', '--root=' + root, '--localrepo=' + destination] + sources)
     if subprocess.call(cmd):
         raise ValueError('build failed')
+
+
+def _mock_exec(root, cmdline, cwd='.', privileged=False):
+    """Run a command non-interactively within a Mock root.
+
+    "mock" executable must be available. The root must already be initialized.
+    This function cannot be called by a superuser.
+
+    :param root: name of the root
+    :type root: str
+    :param cmdline: the command to be run
+    :type cmdline: str
+    :param cwd: name of a working directory relative to the root directory
+    :type cwd: str
+    :param privileged: run with root privileges
+    :type privileged: bool
+    :return: exit status of the command
+    :rtype: int
+
+    """
+    cmd = [
+        'mock', '--quiet', '--root=' + root, '--cwd=' + cwd, '--chroot',
+        cmdline]
+    if not privileged:
+        cmd.insert(3, '--unpriv')
+    return subprocess.call(cmd)
+
+
+def run_tests(tests, cwd, dependencies, root):
+    """Run unit tests in isolation.
+
+    "mock" executable must be available. The root must already be initialized.
+    Path /tmp/dnf-ci must not exist in the root. The dependencies and Nose for
+    both Python 2 and Python 3 will be installed into the root. This function
+    cannot be called by a superuser.
+
+    :param tests: the tests name to be run
+    :type tests: str
+    :param cwd: name of the readable working directory
+    :type cwd: str
+    :param dependencies: required installable dependencies as an argument for
+       "yum install" command
+    :type dependencies: list[str]
+    :param root: name of a writable Mock root
+    :type root: str
+    :return: tests succeeded
+    :rtype: bool
+
+    """
+    mockdn = '/tmp/dnf-ci'
+    ncmd = (
+        lambda version, test, locale='en_US.UTF-8', capture=True:
+        'LANG=' + locale + ' LC_ALL=' + locale + ' nosetests-' + version +
+        ' --quiet' + ('' if capture else ' --nocapture') + ' ' + test)
+    incmd = (
+        ['mock', '--quiet', '--root=' + root, '--install'] + dependencies +
+        ['python-nose', 'python3-nose'])
+    cpcmd = ['mock', '--quiet', '--root=' + root, '--copyin', cwd, mockdn]
+    tcmds = (
+        [ncmd(version, tests),
+         ncmd(version, tests, locale='cs_CZ.utf8'),
+         ncmd(version, tests, capture=False)]
+        for version in ['2.7', '3.4'])
+    subprocess.call(incmd)
+    subprocess.call(cpcmd)
+    _mock_exec(root, 'chown --recursive :mockbuild .', mockdn, privileged=True)
+    statuses = [
+        _mock_exec(root, cmd, mockdn)
+        for cmd in itertools.chain.from_iterable(tcmds)]
+    return not any(statuses)

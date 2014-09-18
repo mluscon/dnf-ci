@@ -25,7 +25,9 @@ from __future__ import unicode_literals
 import abc
 import contextlib
 import io
+import itertools
 import os
+import subprocess
 import tempfile
 import unittest.mock
 
@@ -87,6 +89,25 @@ class _GitStub(object):  # pylint: disable=too-few-public-methods
                 return self.diffindex_repo2statuses[args[2]][0]
 
 
+class _MockResultsTestCase(unittest.TestCase):  # pylint: disable=R0904
+
+    """Test case interested in "mock" executable results.
+
+    :ivar root2packages: installed packages for each Mock root
+    :type root2packages: dict[str, set[str]]
+    :ivar dn2tuple: spec file content, Git revision and Mock root for name of
+       each directory containing the made SRPMs
+    :type dn2tuple: dict[str, tuple[str, str, str]]
+
+    """
+
+    def setUp(self):
+        """Prepare the test fixture."""
+        super().setUp()
+        self.root2packages = {}
+        self.dn2tuple = {}
+
+
 class _Executable(metaclass=abc.ABCMeta):  # pylint: disable=R0903
 
     """A file that can be executed."""
@@ -96,16 +117,21 @@ class _Executable(metaclass=abc.ABCMeta):  # pylint: disable=R0903
         super().__init__()
 
     @abc.abstractmethod
-    def __call__(self, args, cwd):
+    def __call__(self, args, cwd, env, privileged):
         """Call the executable with command line arguments.
 
         :param args: the arguments
         :type args: list[str]
         :param cwd: name of the working directory
         :type cwd: str
+        :param env: value for each environment variable
+        :type env: dict[str, str]
+        :param privileged: call with root privileges
+        :type privileged: bool
         :return: the standard output
         :rtype: bytes
         :raise NotImplementedError: if not implemented
+        :raise subprocess.CalledProcessError: if the exit status is not zero
 
         """
         raise NotImplementedError('not implemented')
@@ -122,24 +148,28 @@ class _CmakeStub(_Executable):  # pylint: disable=too-few-public-methods
 
     """
 
-    def __init__(self, dn2content):
+    def __init__(self, dn2content=None):
         """Initialize the stub.
 
         :param dn2content: file content for each source directory name
-        :type dn2content: dict[str, str]
+        :type dn2content: dict[str, str] | None
 
         """
         super().__init__()
-        self.dn2content = dn2content
+        self.dn2content = dn2content or {}
         self.fn2content = {}
 
-    def __call__(self, args, cwd):
+    def __call__(self, args, cwd, env, privileged):
         """Call the executable with command line arguments.
 
         :param args: the arguments
         :type args: list[str]
         :param cwd: name of the working directory
         :type cwd: str
+        :param env: value for each environment variable
+        :type env: dict[str, str]
+        :param privileged: call with root privileges
+        :type privileged: bool
         :return: the standard output
         :rtype: bytes
 
@@ -159,24 +189,28 @@ class _ArchiveStub(_Executable):  # pylint: disable=too-few-public-methods
 
     """
 
-    def __init__(self, dn2rev):
+    def __init__(self, dn2rev=None):
         """Initialize the stub.
 
         :param dn2rev: Git revision for each source repository name and for
            name of each directory containing the made archives
-        :type dn2rev: dict[str, str]
+        :type dn2rev: dict[str, str] | None
 
         """
         super().__init__()
-        self.dn2rev = dn2rev
+        self.dn2rev = dn2rev or {}
 
-    def __call__(self, args, cwd):
+    def __call__(self, args, cwd, env, privileged):
         """Call the executable with command line arguments.
 
         :param args: the arguments
         :type args: list[str]
         :param cwd: name of the working directory
         :type cwd: str
+        :param env: value for each environment variable
+        :type env: dict[str, str]
+        :param privileged: call with root privileges
+        :type privileged: bool
         :return: the standard output
         :rtype: bytes
 
@@ -199,15 +233,15 @@ class _StandardStreamsStub(object):
 
     """
 
-    def __init__(self, cmake):
+    def __init__(self, cmake=None):
         """Initialize the stub.
 
         :param cmake: the "cmake" executable
-        :type cmake: test.test_unit._CmakeStub
+        :type cmake: test.test_unit._CmakeStub | None
 
         """
         super().__init__()
-        self.cmake = cmake
+        self.cmake = cmake or _CmakeStub()
         self.stdout = io.StringIO()
         self.fn2file = {}
 
@@ -244,46 +278,156 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
     """Testing stub of the "mock" executable.
 
     :ivar test: the current test
-    :type test: test.test_unit.DNFBuildTestCase
+    :type test: test.test_unit._MockResultsTestCase
     :ivar archive: the DNF's "archive" executable
     :type archive: test.test_unit._ArchiveStub
     :ivar streams: the standard streams
     :type streams: test.test_unit._StandardStreamsStub
+    :ivar dn2src: source for each directory name
+    :type dn2src: dict[str, str]
+    :ivar root2subprocess: "subprocess" module for each Mock root
+    :type root2subprocess: dict[str, test.test_unit._SubprocessStub]
 
     """
 
-    def __init__(self, test, archive, streams):
+    def __init__(self, test, archive=None, streams=None):
         """Initialize the stub.
 
         :param test: the current test
-        :type test: test.test_unit.DNFBuildTestCase
+        :type test: test.test_unit._MockResultsTestCase
         :param archive: the DNF's "archive" executable
-        :type archive: test.test_unit._ArchiveStub
+        :type archive: test.test_unit._ArchiveStub | None
         :param streams: the standard streams
-        :type streams: test.test_unit._StandardStreamsStub
+        :type streams: test.test_unit._StandardStreamsStub | None
 
         """
         super().__init__()
         self.test = test
-        self.archive = archive
-        self.streams = streams
+        self.archive = archive or _ArchiveStub()
+        self.streams = streams or _StandardStreamsStub()
+        self.dn2src = {}
+        self.root2subprocess = {}
 
-    def __call__(self, args, cwd):
+    @staticmethod
+    def _rootpath(root, path):
+        """Get host path for a path in a Mock root.
+
+        :param root: name of the root
+        :type root: str
+        :param path: the path name
+        :type path: str
+        :return: the host path name
+        :rtype: str
+
+        """
+        return os.path.join(
+            tempfile.gettempdir(), 'mock', root, path.lstrip(os.sep))
+
+    def _install(self, root, packages):
+        """Install packages into a root.
+
+        :param root: name of the root
+        :type root: str
+        :param packages: the packages as an argument for "yum install" command
+        :type packages: list[str]
+
+        """
+        self.test.root2packages[root] = set(packages)
+
+    def _copyin(self, root, source, destination):
+        """Copy a directory recursively into a root.
+
+        :param root: name of the root
+        :type root: str
+        :param source: name of the file or directory on the host
+        :type source: str
+        :param destination: name of the non-existant directory inside the root
+        :type destination: str
+        :return: the exit status
+        :rtype: int
+
+        """
+        destination = self._rootpath(root, destination)
+        if destination in self.dn2src:
+            return 1
+        self.dn2src[destination] = source
+        return 0
+
+    def _exec(self, root, cmdline, cwd, privileged):
+        """Run a command non-interactively within a root.
+
+        :param root: name of the root
+        :type root: str
+        :param cmdline: the command to be run
+        :type cmdline: str
+        :param cwd: name of a working directory relative to the root directory
+        :type cwd: str
+        :param privileged: run with root privileges
+        :type privileged: bool
+        :return: the standard output
+        :rtype: bytes
+        :raise subprocess.CalledProcessError: if the exit status is not zero
+
+        """
+        return self.root2subprocess[root].check_output(
+            cmdline.split(), self._rootpath(root, cwd), privileged)
+
+    def _buildsrpm(  # pylint: disable=too-many-arguments
+            self, root, spec, sources, result, cwd):
+        """Build an SRPM within a root.
+
+        :param root: name of the root
+        :type root: str
+        :param spec: name of the spec file on the host
+        :type spec: str
+        :param sources: name of the sources directory on the host
+        :type sources: str
+        :param result: name of the result directory on the host
+        :type result: str
+        :param cwd: name of a working directory
+        :type cwd: str
+
+        """
+        self.test.dn2tuple[os.path.join(cwd, result)] = (
+            self.streams.fn2file[os.path.join(cwd, spec)].getvalue(),
+            self.archive.dn2rev[os.path.join(cwd, sources)],
+            root)
+
+    def __call__(self, args, cwd, env, privileged):
         """Call the executable with command line arguments.
 
         :param args: the arguments
         :type args: list[str]
         :param cwd: name of the working directory
         :type cwd: str
+        :param env: value for each environment variable
+        :type env: dict[str, str]
+        :param privileged: call with root privileges
+        :type privileged: bool
         :return: the standard output
         :rtype: bytes
+        :raise subprocess.CalledProcessError: if the exit status is not zero
 
         """
-        self.test.dn2tuple[os.path.join(cwd, args[3][12:])] = (
-            self.streams.fn2file[os.path.join(cwd, args[6][7:])].getvalue(),
-            self.archive.dn2rev[os.path.join(cwd, args[7][10:])],
-            args[2][7:])
-        return b''
+        status, output, root = 0, b'', args[2][7:]
+        if args[3] == '--install':
+            self._install(root, args[4:])
+        elif args[3] == '--copyin':
+            status = self._copyin(root, os.path.join(cwd, args[4]), args[5])
+        elif '--chroot' in args[4:6]:
+            normargs, priv = args[:], True
+            if normargs[3] == '--unpriv':
+                normargs.pop(3)
+                priv = False
+            try:
+                output = self._exec(root, normargs[5], normargs[3][6:], priv)
+            except subprocess.CalledProcessError as err:
+                status, output = err.returncode, err.output
+        else:
+            self._buildsrpm(root, args[6][7:], args[7][10:], args[3][12:], cwd)
+        if status:
+            raise subprocess.CalledProcessError(status, args, output)
+        return output
 
 
 class _MockchainStub(object):  # pylint: disable=too-few-public-methods
@@ -326,6 +470,141 @@ class _MockchainStub(object):  # pylint: disable=too-few-public-methods
         return 0
 
 
+class _RmStub(_Executable):  # pylint: disable=too-few-public-methods
+
+    """Testing stub of the "rm" executable.
+
+    :ivar mock: the "mock" executable
+    :type mock: test.test_unit._MockStub
+
+    """
+
+    def __init__(self, mock):
+        """Initialize the stub.
+
+        :param mock: the "mock" executable
+        :type mock: test.test_unit._MockStub
+
+        """
+        super().__init__()
+        self.mock = mock
+
+    def __call__(self, args, cwd, env, privileged):
+        """Call the executable with command line arguments.
+
+        :param args: the arguments
+        :type args: list[str]
+        :param cwd: name of the working directory
+        :type cwd: str
+        :param env: value for each environment variable
+        :type env: dict[str, str]
+        :param privileged: call with root privileges
+        :type privileged: bool
+        :return: the standard output
+        :rtype: bytes
+
+        """
+        dirname = os.path.normpath(os.path.join(cwd, args[3].lstrip(os.sep)))
+        self.mock.dn2src.pop(dirname, None)
+        return b''
+
+
+class _ChownStub(_Executable):  # pylint: disable=too-few-public-methods
+
+    """Testing stub of the "chown" executable.
+
+    :ivar dn2group: group name for each directory name
+    :type dn2group: dict[str, str]
+
+    """
+
+    def __init__(self):
+        """Initialize the stub."""
+        super().__init__()
+        self.dn2group = {}
+
+    def __call__(self, args, cwd, env, privileged):
+        """Call the executable with command line arguments.
+
+        :param args: the arguments
+        :type args: list[str]
+        :param cwd: name of the working directory
+        :type cwd: str
+        :param env: value for each environment variable
+        :type env: dict[str, str]
+        :param privileged: call with root privileges
+        :type privileged: bool
+        :return: the standard output
+        :rtype: bytes
+
+        """
+        dirname = os.path.normpath(os.path.join(cwd, args[3].lstrip(os.sep)))
+        self.dn2group[dirname] = args[2][1:]
+        return b''
+
+
+class _NoseStub(_Executable):  # pylint: disable=too-few-public-methods
+
+    """Testing stub of the "nosetests" executable.
+
+    :ivar mock: the "mock" executable
+    :type mock: test.test_unit._MockStub
+    :ivar chown: the "chown" executable
+    :type chown: test.test_unit._ChownStub
+    :ivar tuple2exit: exit status of each process for each directory name,
+       test, output capturing, LANG variable, LC_ALL variable, group name and
+       privileges
+    :type tuple2exit: dict[tuple[str, str, bool, str, str, str, bool], int]
+
+    """
+
+    def __init__(self, mock, chown, tuple2exit):
+        """Initialize the stub.
+
+        :param mock: the "mock" executable
+        :type mock: test.test_unit._MockStub
+        :param chown: the "chown" executable
+        :type chown: test.test_unit._ChownStub
+        :param tuple2exit: exit status of each process for each directory name,
+           test, output capturing, LANG variable, LC_ALL variable, group name
+           and privileges
+        :type tuple2exit:
+           dict[tuple[str, str, bool, str, str, str, bool], int]
+
+        """
+        super().__init__()
+        self.mock = mock
+        self.chown = chown
+        self.tuple2exit = tuple2exit
+
+    def __call__(self, args, cwd, env, privileged):
+        """Call the executable with command line arguments.
+
+        :param args: the arguments
+        :type args: list[str]
+        :param cwd: name of the working directory
+        :type cwd: str
+        :param env: value for each environment variable
+        :type env: dict[str, str]
+        :param privileged: call with root privileges
+        :type privileged: bool
+        :return: the standard output
+        :rtype: bytes
+        :raise subprocess.CalledProcessError: if the exit status is not zero
+
+        """
+        normargs, capture = args[:], True
+        if normargs[2] == '--nocapture':
+            normargs.pop(2)
+            capture = False
+        status = self.tuple2exit[
+            self.mock.dn2src[cwd], normargs[2], capture, env['LANG'],
+            env['LC_ALL'], self.chown.dn2group[cwd], privileged]
+        if status:
+            raise subprocess.CalledProcessError(status, args, b'')
+        return b''
+
+
 class _SubprocessStub(object):
 
     """Testing stub of the "subprocess" module.
@@ -338,18 +617,18 @@ class _SubprocessStub(object):
 
     """
 
-    def __init__(self, fn2exe, path_fn2exe=None):
+    def __init__(self, fn2exe=None, path_fn2exe=None):
         """Initialize the stub.
 
         :param fn2exe: executable for each file name
-        :type fn2exe: dict[str, test.test_unit._Executable]
+        :type fn2exe: dict[str, test.test_unit._Executable] | None
         :param path_fn2exe: executable for each file name available in the PATH
            environment variable
         :type path_fn2exe: dict[str, test.test_unit._Executable] | None
 
         """
         super().__init__()
-        self.fn2exe = fn2exe
+        self.fn2exe = fn2exe or {}
         self.path_fn2exe = path_fn2exe or {}
 
     def call(self, args, cwd='.'):
@@ -363,24 +642,33 @@ class _SubprocessStub(object):
         :rtype: int
 
         """
-        self.check_output(args, cwd)
+        try:
+            self.check_output(args, cwd)
+        except subprocess.CalledProcessError as err:
+            return err.returncode
         return 0
 
-    def check_output(self, args, cwd):
+    def check_output(self, args, cwd, privileged=False):
         """Call an executable.
 
         :param args: the command line arguments
         :type args: list[str]
         :param cwd: name of the working directory
         :type cwd: str
+        :param privileged: call with root privileges
+        :type privileged: bool
         :return: the standard output
         :rtype: bytes
+        :raise subprocess.CalledProcessError: if the exit status is not zero
 
         """
+        env = [arg.split('=', 1)
+               for arg in itertools.takewhile(lambda arg: '=' in arg, args)]
+        args = args[len(env):]
         filename = args[0]
         exe = self.fn2exe.get(
             os.path.join(cwd, filename), self.path_fn2exe.get(filename))
-        return exe(args, cwd)
+        return exe(args, cwd, dict(env), privileged)
 
 
 class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
@@ -473,20 +761,9 @@ class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
             'not cloned')
 
 
-class DNFBuildTestCase(unittest.TestCase):  # pylint: disable=R0904
+class DNFBuildTestCase(_MockResultsTestCase):  # pylint: disable=R0904
 
-    """DNF build environment test case.
-
-    :ivar dn2tuple: spec file content, Git revision and Mock root for name of
-       each directory containing the made SRPMs
-    :type dn2tuple: dict[str, tuple[str, str, str]]
-
-    """
-
-    def setUp(self):
-        """Prepare the test fixture."""
-        super().setUp()
-        self.dn2tuple = {}
+    """DNF build environment test case."""
 
     @contextlib.contextmanager
     def patch(self, source, spec, revision):
@@ -593,6 +870,75 @@ class MockchainTestCase(unittest.TestCase):  # pylint: disable=R0904
         with self.assertRaises(ValueError, msg='not raised'):
             with self.patch({srpm}):
                 dnf_ci.build_rpms([srpm], 'build', 'root')
+
+
+class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
+
+    """Mock executable test case."""
+
+    @contextlib.contextmanager
+    def patch(self, cwd, tests, root, status=0):
+        """Return a context manager that patch all the relevant functions.
+
+        :param cwd: name of a working directory used
+        :type cwd: str
+        :param tests: tests used
+        :type tests: str
+        :param root: name of a Mock root used
+        :type root: str
+        :param status: exit status of some Nose processes
+        :type status: int
+        :return: the context manager
+        :rtype: contextmanager
+
+        """
+        mktuple = (
+            lambda capture=True, locale='en_US.UTF-8':
+            (cwd, tests, capture, locale, locale, 'mockbuild', False))
+        tuples = [
+            mktuple(), mktuple(locale='cs_CZ.utf8'), mktuple(capture=False)]
+        chown = _ChownStub()
+        mock = _MockStub(self)
+        mock.root2subprocess[root] = _SubprocessStub(path_fn2exe={
+            'rm': _RmStub(mock),
+            'chown': chown,
+            'nosetests-2.7': _NoseStub(mock, chown, {
+                tuple_: 0 for tuple_ in tuples}),
+            'nosetests-3.4': _NoseStub(mock, chown, {
+                tuple_: status for tuple_ in tuples})})
+        subp = _SubprocessStub(path_fn2exe={'mock': mock})
+        with unittest.mock.patch('subprocess.call', subp.call):
+            yield
+
+    def test_run_tests_successful(self):
+        """Test running with successful tests.
+
+        :raise AssertionError: if the test fails
+
+        """
+        with self.patch(tempfile.gettempdir(), 'tests', 'root', 0):
+            success = dnf_ci.run_tests(
+                'tests', tempfile.gettempdir(), ['pkg1', 'pkg2'], 'root')
+        self.assertTrue(success, 'tests failed')
+        self.assertEqual(
+            self.root2packages['root'],
+            {'pkg1', 'pkg2', 'python-nose', 'python3-nose'},
+            'not installed')
+
+    def test_run_tests_failing(self):
+        """Test running with failing tests.
+
+        :raise AssertionError: if the test fails
+
+        """
+        with self.patch(tempfile.gettempdir(), 'tests', 'root', 1):
+            success = dnf_ci.run_tests(
+                'tests', tempfile.gettempdir(), ['pkg1', 'pkg2'], 'root')
+        self.assertFalse(success, 'tests succeeded')
+        self.assertEqual(
+            self.root2packages['root'],
+            {'pkg1', 'pkg2', 'python-nose', 'python3-nose'},
+            'not installed')
 
 
 if __name__ == '__main__':

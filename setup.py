@@ -76,7 +76,9 @@ if __name__ == '__main__':
             'Operating System :: OS Independent',
             'Programming Language :: Python :: ' +
             str(sys.version_info.major) + '.' + str(sys.version_info.minor),
-            'Topic :: Software Development :: Build Tools'],
+            'Topic :: Software Development :: Build Tools',
+            'Topic :: Software Development :: Quality Assurance',
+            'Topic :: Software Development :: Testing'],
         setup_requires=['docutils', 'setuptools'],
         packages=['dnf_ci'],
         test_suite='test'
