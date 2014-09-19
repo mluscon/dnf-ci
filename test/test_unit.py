@@ -654,6 +654,55 @@ class _Pep8Stub(_Executable):  # pylint: disable=too-few-public-methods
         return output
 
 
+class _PyflakesStub(_Executable):  # pylint: disable=too-few-public-methods
+
+    """Testing stub of the "pyflakes" executable.
+
+    :ivar mock: the "mock" executable
+    :type mock: test.test_unit._MockStub
+    :ivar dn2exitout: exit status and standard output of each process for each
+       directory name
+    :type dn2exitout: dict[str, tuple[int, bytes]]
+
+    """
+
+    def __init__(self, mock, dn2exitout):
+        """Initialize the stub.
+
+        :param mock: the "mock" executable
+        :type mock: test.test_unit._MockStub
+        :param dn2exitout: exit status and standard output of each process for
+           each directory name
+        :type dn2exitout: dict[str, tuple[int, bytes]]
+
+        """
+        super().__init__()
+        self.mock = mock
+        self.dn2exitout = dn2exitout
+
+    def __call__(self, args, cwd, env, privileged):
+        """Call the executable with command line arguments.
+
+        :param args: the arguments
+        :type args: list[str]
+        :param cwd: name of the working directory
+        :type cwd: str
+        :param env: value for each environment variable
+        :type env: dict[str, str]
+        :param privileged: call with root privileges
+        :type privileged: bool
+        :return: the standard output
+        :rtype: bytes
+        :raise subprocess.CalledProcessError: if the exit status is not zero
+
+        """
+        status, output = self.dn2exitout[
+            self.mock.dn2src[os.path.normpath(os.path.join(cwd, args[1]))]]
+        if status:
+            raise subprocess.CalledProcessError(status, args, output)
+        return output
+
+
 class _SubprocessStub(object):
 
     """Testing stub of the "subprocess" module.
@@ -927,7 +976,8 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
 
     @contextlib.contextmanager
     def patch(  # pylint: disable=too-many-arguments
-            self, cwd, root, tests='tests', nose_exit=0, pep_exitout=(0, b'')):
+            self, cwd, root, tests='tests', nose_exit=0, pep_exitout=(0, b''),
+            flakes_exitout=(0, b'')):
         """Return a context manager that patch all the relevant functions.
 
         :param cwd: name of a working directory used
@@ -939,6 +989,9 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         :param nose_exit: exit status of some Nose processes
         :type nose_exit: int
         :param pep_exitout: exit status and standard output of all Pep8
+           processes
+        :type pep_exitout: tuple[int, bytes]
+        :param pep_exitout: exit status and standard output of all Pyflakes
            processes
         :type pep_exitout: tuple[int, bytes]
         :return: the context manager
@@ -962,7 +1015,11 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
             'pep8': _Pep8Stub(mock, {
                 cwd: pep_exitout}),
             'python3-pep8': _Pep8Stub(mock, {
-                cwd: pep_exitout})})
+                cwd: pep_exitout}),
+            'pyflakes': _PyflakesStub(mock, {
+                cwd: flakes_exitout}),
+            'python3-pyflakes': _PyflakesStub(mock, {
+                cwd: flakes_exitout})})
         subp = _SubprocessStub(path_fn2exe={'mock': mock})
         with \
                 unittest.mock.patch(
@@ -1032,6 +1089,39 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
             context.exception.output, output * 2, 'incorrect output')
         self.assertEqual(
             self.root2packages['root'], {'python-pep8', 'python3-pep8'},
+            'not installed')
+
+    def test_pyflakes_isolated_successful(self):  # pylint: disable=C0103
+        """Test running with successful checks.
+
+        :raise AssertionError: if the test fails
+
+        """
+        cwd = tempfile.gettempdir()
+        with self.patch(cwd, 'root', flakes_exitout=(0, b'')):
+            output = dnf_ci.pyflakes_isolated(cwd, 'root')
+        self.assertEqual(output, b'', 'incorrect output')
+        self.assertEqual(
+            self.root2packages['root'], {'pyflakes', 'python3-pyflakes'},
+            'not installed')
+
+    def test_pyflakes_isolated_failing(self):
+        """Test running with failing checks.
+
+        :raise AssertionError: if the test fails
+
+        """
+        cwd = tempfile.gettempdir()
+        output = cwd.encode() + b":1: 'unittest' imported but unused\n"
+        with self.assertRaises(subprocess.CalledProcessError) as context:
+            with self.patch(cwd, 'root', flakes_exitout=(1, output)):
+                dnf_ci.pyflakes_isolated(cwd, 'root')
+        self.assertEqual(
+            context.exception.returncode, 1, 'incorrect status')
+        self.assertEqual(
+            context.exception.output, output * 2, 'incorrect output')
+        self.assertEqual(
+            self.root2packages['root'], {'pyflakes', 'python3-pyflakes'},
             'not installed')
 
 

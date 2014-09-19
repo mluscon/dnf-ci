@@ -248,3 +248,25 @@ def pep8_isolated(dirname, root):
     return _exec_isolation(
         (exe + ' .' for exe in ['pep8', 'python3-pep8']), dirname,
         ['python-pep8', 'python3-pep8'], root)
+
+
+def pyflakes_isolated(dirname, root):
+    """Run "pyflakes" non-interactively in isolation.
+
+    "mock" executable must be available. The root must already be initialized.
+    Path /tmp/dnf-ci will be replaced. Pyflakes for both Python 2 and Python 3
+    will be installed into the root. This function cannot be called by a
+    superuser.
+
+    :param dirname: name of the directory to be checked
+    :type dirname: str
+    :param root: name of a writable Mock root
+    :type root: str
+    :return: standard output of the process
+    :rtype: bytes
+    :raise subprocess.CalledProcessError: if the exit status is not zero
+
+    """
+    return _exec_isolation(
+        (exe + ' .' for exe in ['pyflakes', 'python3-pyflakes']), dirname,
+        ['pyflakes', 'python3-pyflakes'], root)
