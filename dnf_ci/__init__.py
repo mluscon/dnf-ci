@@ -132,8 +132,9 @@ def _mock_exec(root, cmdline, cwd='.', privileged=False):
     :type cwd: str
     :param privileged: run with root privileges
     :type privileged: bool
-    :return: exit status of the command
-    :rtype: int
+    :return: the standard output
+    :rtype: bytes
+    :raise subprocess.CalledProcessError: if the exit status is not zero
 
     """
     cmd = [
@@ -141,16 +142,60 @@ def _mock_exec(root, cmdline, cwd='.', privileged=False):
         cmdline]
     if not privileged:
         cmd.insert(3, '--unpriv')
-    return subprocess.call(cmd)
+    return subprocess.check_output(cmd)
+
+
+def _exec_isolation(cmdlines, cwd, dependencies, root):
+    """Execute commands non-interactively in isolation.
+
+    "mock" executable must be available. The root must already be initialized.
+    Path /tmp/dnf-ci will be replaced.  This function cannot be called by a
+    superuser.
+
+    :param cmdlines: the commands to be run
+    :type cmdlines: collections.abc.Iterable[str]
+    :param cwd: name of a readable working directory that will be copied into
+       the root
+    :type cwd: str
+    :param dependencies: required installable dependencies as an argument for
+       "yum install" command
+    :type dependencies: list[str]
+    :param root: name of a writable Mock root
+    :type root: str
+    :return: joint standard output of the commands
+    :rtype: bytes
+    :raise subprocess.CalledProcessError: if any exit status is not zero
+
+    """
+    mockdn = '/tmp/dnf-ci'
+    rmcmdl = 'rm --recursive --force ' + mockdn
+    incmd = ['mock', '--quiet', '--root=' + root, '--install'] + dependencies
+    cpcmd = ['mock', '--quiet', '--root=' + root, '--copyin', cwd, mockdn]
+    chcmdl = 'chown --recursive :mockbuild ' + mockdn
+    _mock_exec(root, rmcmdl, privileged=True)
+    subprocess.call(incmd)
+    subprocess.call(cpcmd)
+    _mock_exec(root, chcmdl, privileged=True)
+    err = subprocess.CalledProcessError(0, None, b'')
+    for cmdline in cmdlines:
+        try:
+            err.output += _mock_exec(root, cmdline, mockdn)
+        except subprocess.CalledProcessError as err_:
+            if not err.returncode:
+                err.cmd, err.returncode = err_.cmd, err_.returncode
+            err.output += err_.output
+    if err.returncode:
+        raise err
+    return err.output
 
 
 def run_tests(tests, cwd, dependencies, root):
     """Run unit tests in isolation.
 
     "mock" executable must be available. The root must already be initialized.
-    Path /tmp/dnf-ci must not exist in the root. The dependencies and Nose for
-    both Python 2 and Python 3 will be installed into the root. This function
-    cannot be called by a superuser.
+    Path /tmp/dnf-ci will be replaced. The dependencies and Nose for both
+    Python 2 and Python 3 will be installed into the root. This function cannot
+    be called by a superuser.
 
     :param tests: the tests name to be run
     :type tests: str
@@ -165,24 +210,41 @@ def run_tests(tests, cwd, dependencies, root):
     :rtype: bool
 
     """
-    mockdn = '/tmp/dnf-ci'
     ncmd = (
         lambda version, test, locale='en_US.UTF-8', capture=True:
         'LANG=' + locale + ' LC_ALL=' + locale + ' nosetests-' + version +
         ' --quiet' + ('' if capture else ' --nocapture') + ' ' + test)
-    incmd = (
-        ['mock', '--quiet', '--root=' + root, '--install'] + dependencies +
-        ['python-nose', 'python3-nose'])
-    cpcmd = ['mock', '--quiet', '--root=' + root, '--copyin', cwd, mockdn]
     tcmds = (
         [ncmd(version, tests),
          ncmd(version, tests, locale='cs_CZ.utf8'),
          ncmd(version, tests, capture=False)]
         for version in ['2.7', '3.4'])
-    subprocess.call(incmd)
-    subprocess.call(cpcmd)
-    _mock_exec(root, 'chown --recursive :mockbuild .', mockdn, privileged=True)
-    statuses = [
-        _mock_exec(root, cmd, mockdn)
-        for cmd in itertools.chain.from_iterable(tcmds)]
-    return not any(statuses)
+    try:
+        status, output = 0, _exec_isolation(
+            itertools.chain.from_iterable(tcmds), cwd,
+            dependencies + ['python-nose', 'python3-nose'], root)
+    except subprocess.CalledProcessError as err:
+        status, output = err.returncode, err.output
+    print(output.decode())
+    return not status
+
+
+def pep8_isolated(dirname, root):
+    """Run "pep8" non-interactively in isolation.
+
+    "mock" executable must be available. The root must already be initialized.
+    Path /tmp/dnf-ci will be replaced. Pep8 for both Python 2 and Python 3 will
+    be installed into the root. This function cannot be called by a superuser.
+
+    :param dirname: name of the directory to be checked
+    :type dirname: str
+    :param root: name of a writable Mock root
+    :type root: str
+    :return: standard output of the process
+    :rtype: bytes
+    :raise subprocess.CalledProcessError: if the exit status is not zero
+
+    """
+    return _exec_isolation(
+        (exe + ' .' for exe in ['pep8', 'python3-pep8']), dirname,
+        ['python-pep8', 'python3-pep8'], root)

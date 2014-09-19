@@ -605,6 +605,55 @@ class _NoseStub(_Executable):  # pylint: disable=too-few-public-methods
         return b''
 
 
+class _Pep8Stub(_Executable):  # pylint: disable=too-few-public-methods
+
+    """Testing stub of the "pep8" executable.
+
+    :ivar mock: the "mock" executable
+    :type mock: test.test_unit._MockStub
+    :ivar dn2exitout: exit status and standard output of each process for each
+       directory name
+    :type dn2exitout: dict[str, tuple[int, bytes]]
+
+    """
+
+    def __init__(self, mock, dn2exitout):
+        """Initialize the stub.
+
+        :param mock: the "mock" executable
+        :type mock: test.test_unit._MockStub
+        :param dn2exitout: exit status and standard output of each process for
+           each directory name
+        :type dn2exitout: dict[str, tuple[int, bytes]]
+
+        """
+        super().__init__()
+        self.mock = mock
+        self.dn2exitout = dn2exitout
+
+    def __call__(self, args, cwd, env, privileged):
+        """Call the executable with command line arguments.
+
+        :param args: the arguments
+        :type args: list[str]
+        :param cwd: name of the working directory
+        :type cwd: str
+        :param env: value for each environment variable
+        :type env: dict[str, str]
+        :param privileged: call with root privileges
+        :type privileged: bool
+        :return: the standard output
+        :rtype: bytes
+        :raise subprocess.CalledProcessError: if the exit status is not zero
+
+        """
+        status, output = self.dn2exitout[
+            self.mock.dn2src[os.path.normpath(os.path.join(cwd, args[1]))]]
+        if status:
+            raise subprocess.CalledProcessError(status, args, output)
+        return output
+
+
 class _SubprocessStub(object):
 
     """Testing stub of the "subprocess" module.
@@ -648,7 +697,7 @@ class _SubprocessStub(object):
             return err.returncode
         return 0
 
-    def check_output(self, args, cwd, privileged=False):
+    def check_output(self, args, cwd='.', privileged=False):
         """Call an executable.
 
         :param args: the command line arguments
@@ -877,17 +926,21 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
     """Mock executable test case."""
 
     @contextlib.contextmanager
-    def patch(self, cwd, tests, root, status=0):
+    def patch(  # pylint: disable=too-many-arguments
+            self, cwd, root, tests='tests', nose_exit=0, pep_exitout=(0, b'')):
         """Return a context manager that patch all the relevant functions.
 
         :param cwd: name of a working directory used
         :type cwd: str
-        :param tests: tests used
-        :type tests: str
         :param root: name of a Mock root used
         :type root: str
-        :param status: exit status of some Nose processes
-        :type status: int
+        :param tests: tests used
+        :type tests: str
+        :param nose_exit: exit status of some Nose processes
+        :type nose_exit: int
+        :param pep_exitout: exit status and standard output of all Pep8
+           processes
+        :type pep_exitout: tuple[int, bytes]
         :return: the context manager
         :rtype: contextmanager
 
@@ -905,9 +958,17 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
             'nosetests-2.7': _NoseStub(mock, chown, {
                 tuple_: 0 for tuple_ in tuples}),
             'nosetests-3.4': _NoseStub(mock, chown, {
-                tuple_: status for tuple_ in tuples})})
+                tuple_: nose_exit for tuple_ in tuples}),
+            'pep8': _Pep8Stub(mock, {
+                cwd: pep_exitout}),
+            'python3-pep8': _Pep8Stub(mock, {
+                cwd: pep_exitout})})
         subp = _SubprocessStub(path_fn2exe={'mock': mock})
-        with unittest.mock.patch('subprocess.call', subp.call):
+        with \
+                unittest.mock.patch(
+                    'subprocess.call', subp.call), \
+                unittest.mock.patch(
+                    'subprocess.check_output', subp.check_output):
             yield
 
     def test_run_tests_successful(self):
@@ -916,7 +977,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
-        with self.patch(tempfile.gettempdir(), 'tests', 'root', 0):
+        with self.patch(tempfile.gettempdir(), 'root', 'tests', nose_exit=0):
             success = dnf_ci.run_tests(
                 'tests', tempfile.gettempdir(), ['pkg1', 'pkg2'], 'root')
         self.assertTrue(success, 'tests failed')
@@ -931,13 +992,46 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
-        with self.patch(tempfile.gettempdir(), 'tests', 'root', 1):
+        with self.patch(tempfile.gettempdir(), 'root', 'tests', nose_exit=1):
             success = dnf_ci.run_tests(
                 'tests', tempfile.gettempdir(), ['pkg1', 'pkg2'], 'root')
         self.assertFalse(success, 'tests succeeded')
         self.assertEqual(
             self.root2packages['root'],
             {'pkg1', 'pkg2', 'python-nose', 'python3-nose'},
+            'not installed')
+
+    def test_pep8_isolated_successful(self):
+        """Test running with successful checks.
+
+        :raise AssertionError: if the test fails
+
+        """
+        with self.patch(tempfile.gettempdir(), 'root', pep_exitout=(0, b'')):
+            output = dnf_ci.pep8_isolated(tempfile.gettempdir(), 'root')
+        self.assertEqual(output, b'', 'incorrect output')
+        self.assertEqual(
+            self.root2packages['root'], {'python-pep8', 'python3-pep8'},
+            'not installed')
+
+    def test_pep8_isolated_failing(self):
+        """Test running with failing checks.
+
+        :raise AssertionError: if the test fails
+
+        """
+        cwd = tempfile.gettempdir()
+        output = (
+            cwd.encode() + b':1:80: E501 line too long (80 > 79 characters)\n')
+        with self.assertRaises(subprocess.CalledProcessError) as context:
+            with self.patch(cwd, 'root', pep_exitout=(1, output)):
+                dnf_ci.pep8_isolated(cwd, 'root')
+        self.assertEqual(
+            context.exception.returncode, 1, 'incorrect status')
+        self.assertEqual(
+            context.exception.output, output * 2, 'incorrect output')
+        self.assertEqual(
+            self.root2packages['root'], {'python-pep8', 'python3-pep8'},
             'not installed')
 
 
