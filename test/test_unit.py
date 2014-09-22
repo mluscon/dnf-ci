@@ -323,6 +323,25 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
         return os.path.join(
             tempfile.gettempdir(), 'mock', root, path.lstrip(os.sep))
 
+    @staticmethod
+    def _split_commandline(line):
+        """Split command line arguments.
+
+        :param line: the command line
+        :type line: str
+        :return: generator yielding the command line arguments
+        :rtype: collections.abc.Iterator[str]
+
+        """
+        start, nobreak = 0, False
+        for end, character in enumerate(line):
+            if character == '"':
+                nobreak = not nobreak
+            elif character == ' ' and not nobreak:
+                yield line[start:end]
+                start = end + 1
+        yield line[start:]
+
     def _install(self, root, packages):
         """Install packages into a root.
 
@@ -369,8 +388,9 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
         :raise subprocess.CalledProcessError: if the exit status is not zero
 
         """
+        command = list(self._split_commandline(cmdline))
         return self.root2subprocess[root].check_output(
-            cmdline.split(), self._rootpath(root, cwd), privileged)
+            command, self._rootpath(root, cwd), privileged)
 
     def _buildsrpm(  # pylint: disable=too-many-arguments
             self, root, spec, sources, result, cwd):
@@ -703,6 +723,55 @@ class _PyflakesStub(_Executable):  # pylint: disable=too-few-public-methods
         return output
 
 
+class _PylintStub(_Executable):  # pylint: disable=too-few-public-methods
+
+    """Testing stub of the "pylint" executable.
+
+    :ivar mock: the "mock" executable
+    :type mock: test.test_unit._MockStub
+    :ivar tuple2exitout: exit status and standard output of each process for
+       each directory name and subdirectories' names
+    :type tuple2exitout: dict[tuple[str, tuple[str]], tuple[int, bytes]]
+
+    """
+
+    def __init__(self, mock, tuple2exitout):
+        """Initialize the stub.
+
+        :ivar mock: the "mock" executable
+        :type mock: test.test_unit._MockStub
+        :ivar tuple2exitout: exit status and standard output of each process
+           for each directory name and subdirectories' names
+        :type tuple2exitout: dict[tuple[str, tuple[str]], tuple[int, bytes]]
+
+        """
+        super().__init__()
+        self.mock = mock
+        self.tuple2exitout = tuple2exitout
+
+    def __call__(self, args, cwd, env, privileged):
+        """Call the executable with command line arguments.
+
+        :param args: the arguments
+        :type args: list[str]
+        :param cwd: name of the working directory
+        :type cwd: str
+        :param env: value for each environment variable
+        :type env: dict[str, str]
+        :param privileged: call with root privileges
+        :type privileged: bool
+        :return: the standard output
+        :rtype: bytes
+        :raise subprocess.CalledProcessError: if the exit status is not zero
+
+        """
+        status, output = self.tuple2exitout[
+            self.mock.dn2src[cwd], tuple(args[3:])]
+        if status:
+            raise subprocess.CalledProcessError(status, args, output)
+        return output
+
+
 class _SubprocessStub(object):
 
     """Testing stub of the "subprocess" module.
@@ -977,7 +1046,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
     @contextlib.contextmanager
     def patch(  # pylint: disable=too-many-arguments
             self, cwd, root, tests='tests', nose_exit=0, pep_exitout=(0, b''),
-            flakes_exitout=(0, b'')):
+            flakes_exitout=(0, b''), lint_reldns=None, lint_exitout=(0, b'')):
         """Return a context manager that patch all the relevant functions.
 
         :param cwd: name of a working directory used
@@ -991,9 +1060,11 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         :param pep_exitout: exit status and standard output of all Pep8
            processes
         :type pep_exitout: tuple[int, bytes]
-        :param pep_exitout: exit status and standard output of all Pyflakes
+        :param lint_reldns: names of directories used with Pylint
+        :type lint_reldns: list[str] | None
+        :param lint_exitout: exit status and standard output of all Pylint
            processes
-        :type pep_exitout: tuple[int, bytes]
+        :type lint_exitout: tuple[int, bytes]
         :return: the context manager
         :rtype: contextmanager
 
@@ -1003,6 +1074,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
             (cwd, tests, capture, locale, locale, 'mockbuild', False))
         tuples = [
             mktuple(), mktuple(locale='cs_CZ.utf8'), mktuple(capture=False)]
+        lint_reldns = tuple(lint_reldns or ())
         chown = _ChownStub()
         mock = _MockStub(self)
         mock.root2subprocess[root] = _SubprocessStub(path_fn2exe={
@@ -1019,7 +1091,11 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
             'pyflakes': _PyflakesStub(mock, {
                 cwd: flakes_exitout}),
             'python3-pyflakes': _PyflakesStub(mock, {
-                cwd: flakes_exitout})})
+                cwd: flakes_exitout}),
+            'pylint': _PylintStub(mock, {
+                (cwd, lint_reldns): lint_exitout}),
+            'python3-pylint': _PylintStub(mock, {
+                (cwd, lint_reldns): lint_exitout})})
         subp = _SubprocessStub(path_fn2exe={'mock': mock})
         with \
                 unittest.mock.patch(
@@ -1122,6 +1198,49 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
             context.exception.output, output * 2, 'incorrect output')
         self.assertEqual(
             self.root2packages['root'], {'pyflakes', 'python3-pyflakes'},
+            'not installed')
+
+    def test_pylint_isolated_successful(self):
+        """Test running with successful checks.
+
+        :raise AssertionError: if the test fails
+
+        """
+        patcher = self.patch(
+            tempfile.gettempdir(), 'root', lint_reldns=['d1', 'd2'],
+            lint_exitout=(0, b''))
+        with patcher:
+            output = dnf_ci.pylint_isolated(
+                ['d1', 'd2'], tempfile.gettempdir(), ['p1', 'p2'], 'root')
+        self.assertEqual(output, b'', 'incorrect output')
+        self.assertEqual(
+            self.root2packages['root'],
+            {'p1', 'p2', 'pylint', 'python3-pylint'},
+            'not installed')
+
+    def test_pylint_isolated_failing(self):
+        """Test running with failing checks.
+
+        :raise AssertionError: if the test fails
+
+        """
+        output = (
+            tempfile.gettempdir().encode() +
+            b'/d1:1: [E0001(syntax-error), ] invalid syntax\n')
+        patcher = self.patch(
+            tempfile.gettempdir(), 'root', lint_reldns=['d1', 'd2'],
+            lint_exitout=(1, output))
+        with self.assertRaises(subprocess.CalledProcessError) as context:
+            with patcher:
+                dnf_ci.pylint_isolated(
+                    ['d1', 'd2'], tempfile.gettempdir(), ['p1', 'p2'], 'root')
+        self.assertEqual(
+            context.exception.returncode, 1, 'incorrect status')
+        self.assertEqual(
+            context.exception.output, output * 2, 'incorrect output')
+        self.assertEqual(
+            self.root2packages['root'],
+            {'p1', 'p2', 'pylint', 'python3-pylint'},
             'not installed')
 
 

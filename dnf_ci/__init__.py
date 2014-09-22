@@ -270,3 +270,34 @@ def pyflakes_isolated(dirname, root):
     return _exec_isolation(
         (exe + ' .' for exe in ['pyflakes', 'python3-pyflakes']), dirname,
         ['pyflakes', 'python3-pyflakes'], root)
+
+
+def pylint_isolated(reldns, cwd, dependencies, root):
+    """Run "pylint" non-interactively in isolation.
+
+    "mock" executable must be available. The root must already be initialized.
+    Path /tmp/dnf-ci will be replaced. The dependencies and Pylint for both
+    Python 2 and Python 3 will be installed into the root. This function cannot
+    be called by a superuser.
+
+    :param reldns: names of readable directories to be checked relative to the
+       working directory
+    :type reldns: list[str]
+    :param cwd: name of the readable working directory
+    :type cwd: str
+    :param dependencies: required installable dependencies as an argument for
+       "yum install" command
+    :type dependencies: list[str]
+    :param root: name of a writable Mock root
+    :type root: str
+    :return: standard output of the process
+    :rtype: bytes
+    :raise subprocess.CalledProcessError: if the exit status is not zero
+
+    """
+    tmplt = '--msg-template="{path}:{line}: [{msg_id}({symbol}), {obj}] {msg}"'
+    cmds = (
+        ' '.join([executable, tmplt, '--reports=n'] + reldns)
+        for executable in ['pylint', 'python3-pylint'])
+    return _exec_isolation(
+        cmds, cwd, dependencies + ['pylint', 'python3-pylint'], root)
