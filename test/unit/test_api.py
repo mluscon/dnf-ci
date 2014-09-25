@@ -15,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Test isolated units of the source code."""
+"""Test the units related to the application programming interface."""
 
 
 from __future__ import absolute_import
@@ -31,7 +31,7 @@ import subprocess
 import tempfile
 import unittest.mock
 
-import dnf_ci
+import dnf_ci.api
 
 
 class _GitStub(object):  # pylint: disable=too-few-public-methods
@@ -39,7 +39,7 @@ class _GitStub(object):  # pylint: disable=too-few-public-methods
     """Testing stub of the "git" executable.
 
     :ivar test: the current test
-    :type test: test.test_unit.GitExecutableTestCase
+    :type test: test.unit.test_api.GitExecutableTestCase
     :ivar difffiles_repo2status: exit status of "git diff-files" command for
        each repository
     :type difffiles_repo2status: dict[str, int]
@@ -53,7 +53,7 @@ class _GitStub(object):  # pylint: disable=too-few-public-methods
         """Initialize the stub.
 
         :param test: the current test
-        :type test: test.test_unit.GitExecutableTestCase
+        :type test: test.unit.test_api.GitExecutableTestCase
         :param difffiles_repo2status: exit status of "git diff-files" command
            for each repository
         :type difffiles_repo2status: dict[str, int]
@@ -225,7 +225,7 @@ class _StandardStreamsStub(object):
     """Testing stub of the standard streams.
 
     :ivar cmake: the "cmake" executable
-    :type cmake: test.test_unit._CmakeStub
+    :type cmake: test.unit.test_api._CmakeStub
     :ivar stdout: the current testing standard output
     :type stdout: io.StringIO
     :ivar fn2file: file for each file name (both input and output)
@@ -237,7 +237,7 @@ class _StandardStreamsStub(object):
         """Initialize the stub.
 
         :param cmake: the "cmake" executable
-        :type cmake: test.test_unit._CmakeStub | None
+        :type cmake: test.unit.test_api._CmakeStub | None
 
         """
         super().__init__()
@@ -278,15 +278,15 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
     """Testing stub of the "mock" executable.
 
     :ivar test: the current test
-    :type test: test.test_unit._MockResultsTestCase
+    :type test: test.unit.test_api._MockResultsTestCase
     :ivar archive: the DNF's "archive" executable
-    :type archive: test.test_unit._ArchiveStub
+    :type archive: test.unit.test_api._ArchiveStub
     :ivar streams: the standard streams
-    :type streams: test.test_unit._StandardStreamsStub
+    :type streams: test.unit.test_api._StandardStreamsStub
     :ivar dn2src: source for each directory name
     :type dn2src: dict[str, str]
     :ivar root2subprocess: "subprocess" module for each Mock root
-    :type root2subprocess: dict[str, test.test_unit._SubprocessStub]
+    :type root2subprocess: dict[str, test.unit.test_api._SubprocessStub]
 
     """
 
@@ -294,11 +294,11 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
         """Initialize the stub.
 
         :param test: the current test
-        :type test: test.test_unit._MockResultsTestCase
+        :type test: test.unit.test_api._MockResultsTestCase
         :param archive: the DNF's "archive" executable
-        :type archive: test.test_unit._ArchiveStub | None
+        :type archive: test.unit.test_api._ArchiveStub | None
         :param streams: the standard streams
-        :type streams: test.test_unit._StandardStreamsStub | None
+        :type streams: test.unit.test_api._StandardStreamsStub | None
 
         """
         super().__init__()
@@ -455,7 +455,7 @@ class _MockchainStub(object):  # pylint: disable=too-few-public-methods
     """Testing stub of the "mockchain" executable.
 
     :ivar test: the current test
-    :type test: test.test_unit.MockchainTestCase
+    :type test: test.unit.test_api.MockchainTestCase
     :ivar failing: names of SRPMS that cannot be built
     :type failing: str[str]
 
@@ -465,7 +465,7 @@ class _MockchainStub(object):  # pylint: disable=too-few-public-methods
         """Initialize the stub.
 
         :param test: the current test
-        :type test: test.test_unit.MockchainTestCase
+        :type test: test.unit.test_api.MockchainTestCase
         :param failing: names of SRPMS that cannot be built
         :type failing: set[str]
 
@@ -495,7 +495,7 @@ class _RmStub(_Executable):  # pylint: disable=too-few-public-methods
     """Testing stub of the "rm" executable.
 
     :ivar mock: the "mock" executable
-    :type mock: test.test_unit._MockStub
+    :type mock: test.unit.test_api._MockStub
 
     """
 
@@ -503,7 +503,7 @@ class _RmStub(_Executable):  # pylint: disable=too-few-public-methods
         """Initialize the stub.
 
         :param mock: the "mock" executable
-        :type mock: test.test_unit._MockStub
+        :type mock: test.unit.test_api._MockStub
 
         """
         super().__init__()
@@ -568,9 +568,9 @@ class _NoseStub(_Executable):  # pylint: disable=too-few-public-methods
     """Testing stub of the "nosetests" executable.
 
     :ivar mock: the "mock" executable
-    :type mock: test.test_unit._MockStub
+    :type mock: test.unit.test_api._MockStub
     :ivar chown: the "chown" executable
-    :type chown: test.test_unit._ChownStub
+    :type chown: test.unit.test_api._ChownStub
     :ivar tuple2exit: exit status of each process for each directory name,
        test, output capturing, LANG variable, LC_ALL variable, group name and
        privileges
@@ -582,9 +582,9 @@ class _NoseStub(_Executable):  # pylint: disable=too-few-public-methods
         """Initialize the stub.
 
         :param mock: the "mock" executable
-        :type mock: test.test_unit._MockStub
+        :type mock: test.unit.test_api._MockStub
         :param chown: the "chown" executable
-        :type chown: test.test_unit._ChownStub
+        :type chown: test.unit.test_api._ChownStub
         :param tuple2exit: exit status of each process for each directory name,
            test, output capturing, LANG variable, LC_ALL variable, group name
            and privileges
@@ -630,7 +630,7 @@ class _Pep8Stub(_Executable):  # pylint: disable=too-few-public-methods
     """Testing stub of the "pep8" executable.
 
     :ivar mock: the "mock" executable
-    :type mock: test.test_unit._MockStub
+    :type mock: test.unit.test_api._MockStub
     :ivar dn2exitout: exit status and standard output of each process for each
        directory name
     :type dn2exitout: dict[str, tuple[int, bytes]]
@@ -641,7 +641,7 @@ class _Pep8Stub(_Executable):  # pylint: disable=too-few-public-methods
         """Initialize the stub.
 
         :param mock: the "mock" executable
-        :type mock: test.test_unit._MockStub
+        :type mock: test.unit.test_api._MockStub
         :param dn2exitout: exit status and standard output of each process for
            each directory name
         :type dn2exitout: dict[str, tuple[int, bytes]]
@@ -679,7 +679,7 @@ class _PyflakesStub(_Executable):  # pylint: disable=too-few-public-methods
     """Testing stub of the "pyflakes" executable.
 
     :ivar mock: the "mock" executable
-    :type mock: test.test_unit._MockStub
+    :type mock: test.unit.test_api._MockStub
     :ivar dn2exitout: exit status and standard output of each process for each
        directory name
     :type dn2exitout: dict[str, tuple[int, bytes]]
@@ -690,7 +690,7 @@ class _PyflakesStub(_Executable):  # pylint: disable=too-few-public-methods
         """Initialize the stub.
 
         :param mock: the "mock" executable
-        :type mock: test.test_unit._MockStub
+        :type mock: test.unit.test_api._MockStub
         :param dn2exitout: exit status and standard output of each process for
            each directory name
         :type dn2exitout: dict[str, tuple[int, bytes]]
@@ -728,7 +728,7 @@ class _PylintStub(_Executable):  # pylint: disable=too-few-public-methods
     """Testing stub of the "pylint" executable.
 
     :ivar mock: the "mock" executable
-    :type mock: test.test_unit._MockStub
+    :type mock: test.unit.test_api._MockStub
     :ivar tuple2exitout: exit status and standard output of each process for
        each directory name and subdirectories' names
     :type tuple2exitout: dict[tuple[str, tuple[str]], tuple[int, bytes]]
@@ -739,7 +739,7 @@ class _PylintStub(_Executable):  # pylint: disable=too-few-public-methods
         """Initialize the stub.
 
         :ivar mock: the "mock" executable
-        :type mock: test.test_unit._MockStub
+        :type mock: test.unit.test_api._MockStub
         :ivar tuple2exitout: exit status and standard output of each process
            for each directory name and subdirectories' names
         :type tuple2exitout: dict[tuple[str, tuple[str]], tuple[int, bytes]]
@@ -777,10 +777,10 @@ class _SubprocessStub(object):
     """Testing stub of the "subprocess" module.
 
     :ivar fn2exe: executable for each file name
-    :type fn2exe: dict[str, test.test_unit._Executable]
+    :type fn2exe: dict[str, test.unit.test_api._Executable]
     :ivar path_fn2exe: executable for each file name available in the PATH
        environment variable
-    :type path_fn2exe: dict[str, test.test_unit._Executable]
+    :type path_fn2exe: dict[str, test.unit.test_api._Executable]
 
     """
 
@@ -788,10 +788,10 @@ class _SubprocessStub(object):
         """Initialize the stub.
 
         :param fn2exe: executable for each file name
-        :type fn2exe: dict[str, test.test_unit._Executable] | None
+        :type fn2exe: dict[str, test.unit.test_api._Executable] | None
         :param path_fn2exe: executable for each file name available in the PATH
            environment variable
-        :type path_fn2exe: dict[str, test.test_unit._Executable] | None
+        :type path_fn2exe: dict[str, test.unit.test_api._Executable] | None
 
         """
         super().__init__()
@@ -879,7 +879,7 @@ class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
 
         """
         with self.patch(tempfile.gettempdir()):
-            found = dnf_ci.uncommitted_changes(tempfile.gettempdir())
+            found = dnf_ci.api.uncommitted_changes(tempfile.gettempdir())
         self.assertFalse(found, 'found')
 
     def test_uncommitted_changes_tree(self):
@@ -889,7 +889,7 @@ class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
 
         """
         with self.patch(tempfile.gettempdir(), difffiles=1):
-            found = dnf_ci.uncommitted_changes(tempfile.gettempdir())
+            found = dnf_ci.api.uncommitted_changes(tempfile.gettempdir())
         self.assertTrue(found, 'not found')
 
     def test_uncommitted_changes_index(self):
@@ -899,7 +899,7 @@ class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
 
         """
         with self.patch(tempfile.gettempdir(), diffindex=[1]):
-            found = dnf_ci.uncommitted_changes(tempfile.gettempdir())
+            found = dnf_ci.api.uncommitted_changes(tempfile.gettempdir())
         self.assertTrue(found, 'not found')
 
     def test_uncommitted_changes_refresh(self):  # pylint: disable=invalid-name
@@ -909,7 +909,7 @@ class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
 
         """
         with self.patch(tempfile.gettempdir(), diffindex=[1, 0]):
-            found = dnf_ci.uncommitted_changes(tempfile.gettempdir())
+            found = dnf_ci.api.uncommitted_changes(tempfile.gettempdir())
         self.assertFalse(found, 'not refreshed')
 
     def test_clone(self):
@@ -919,7 +919,7 @@ class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
 
         """
         with self.patch(tempfile.gettempdir()):
-            dnf_ci.clone(
+            dnf_ci.api.clone(
                 os.path.join(tempfile.gettempdir(), 'src'),
                 os.path.join(tempfile.gettempdir(), 'tgt'))
         self.assertEqual(
@@ -960,7 +960,7 @@ class DNFBuildTestCase(_MockResultsTestCase):  # pylint: disable=R0904
                 unittest.mock.patch(
                     'fileinput.FileInput', mock.streams.fileinput), \
                 unittest.mock.patch(
-                    'dnf_ci.print', mock.streams.print_, create=True):
+                    'dnf_ci.api.print', mock.streams.print_, create=True):
             yield
 
     def test_build_dnf(self):
@@ -972,7 +972,7 @@ class DNFBuildTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         destination = os.path.join(tempfile.gettempdir(), 'build')
         spec = '%global gitrev abCD012\nrest of original\n'
         with self.patch(tempfile.gettempdir(), spec, 'bcDE123'):
-            dnf_ci.build_dnf(tempfile.gettempdir(), destination, 'root')
+            dnf_ci.api.build_dnf(tempfile.gettempdir(), destination, 'root')
         self.assertEqual(
             self.dn2tuple[destination],
             ('%global gitrev bcDE123\nrest of original\n', 'bcDE123', 'root'),
@@ -1015,7 +1015,7 @@ class MockchainTestCase(unittest.TestCase):  # pylint: disable=R0904
 
         """
         with self.patch():
-            dnf_ci.build_rpms(
+            dnf_ci.api.build_rpms(
                 [os.path.join(tempfile.gettempdir(), 'a.src.rpm'),
                  os.path.join(tempfile.gettempdir(), 'b.src.rpm')],
                 os.path.join(tempfile.gettempdir(), 'build'),
@@ -1036,7 +1036,7 @@ class MockchainTestCase(unittest.TestCase):  # pylint: disable=R0904
         srpm = os.path.join(tempfile.gettempdir(), 'a.src.rpm')
         with self.assertRaises(ValueError, msg='not raised'):
             with self.patch({srpm}):
-                dnf_ci.build_rpms([srpm], 'build', 'root')
+                dnf_ci.api.build_rpms([srpm], 'build', 'root')
 
 
 class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
@@ -1111,7 +1111,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
 
         """
         with self.patch(tempfile.gettempdir(), 'root', 'tests', nose_exit=0):
-            success = dnf_ci.run_tests(
+            success = dnf_ci.api.run_tests(
                 'tests', tempfile.gettempdir(), ['pkg1', 'pkg2'], 'root')
         self.assertTrue(success, 'tests failed')
         self.assertEqual(
@@ -1126,7 +1126,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
 
         """
         with self.patch(tempfile.gettempdir(), 'root', 'tests', nose_exit=1):
-            success = dnf_ci.run_tests(
+            success = dnf_ci.api.run_tests(
                 'tests', tempfile.gettempdir(), ['pkg1', 'pkg2'], 'root')
         self.assertFalse(success, 'tests succeeded')
         self.assertEqual(
@@ -1141,7 +1141,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
 
         """
         with self.patch(tempfile.gettempdir(), 'root', pep_exitout=(0, b'')):
-            output = dnf_ci.pep8_isolated(tempfile.gettempdir(), 'root')
+            output = dnf_ci.api.pep8_isolated(tempfile.gettempdir(), 'root')
         self.assertEqual(output, b'', 'incorrect output')
         self.assertEqual(
             self.root2packages['root'], {'python-pep8', 'python3-pep8'},
@@ -1158,7 +1158,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
             cwd.encode() + b':1:80: E501 line too long (80 > 79 characters)\n')
         with self.assertRaises(subprocess.CalledProcessError) as context:
             with self.patch(cwd, 'root', pep_exitout=(1, output)):
-                dnf_ci.pep8_isolated(cwd, 'root')
+                dnf_ci.api.pep8_isolated(cwd, 'root')
         self.assertEqual(
             context.exception.returncode, 1, 'incorrect status')
         self.assertEqual(
@@ -1175,7 +1175,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         """
         cwd = tempfile.gettempdir()
         with self.patch(cwd, 'root', flakes_exitout=(0, b'')):
-            output = dnf_ci.pyflakes_isolated(cwd, 'root')
+            output = dnf_ci.api.pyflakes_isolated(cwd, 'root')
         self.assertEqual(output, b'', 'incorrect output')
         self.assertEqual(
             self.root2packages['root'], {'pyflakes', 'python3-pyflakes'},
@@ -1191,7 +1191,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         output = cwd.encode() + b":1: 'unittest' imported but unused\n"
         with self.assertRaises(subprocess.CalledProcessError) as context:
             with self.patch(cwd, 'root', flakes_exitout=(1, output)):
-                dnf_ci.pyflakes_isolated(cwd, 'root')
+                dnf_ci.api.pyflakes_isolated(cwd, 'root')
         self.assertEqual(
             context.exception.returncode, 1, 'incorrect status')
         self.assertEqual(
@@ -1210,7 +1210,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
             tempfile.gettempdir(), 'root', lint_reldns=['d1', 'd2'],
             lint_exitout=(0, b''))
         with patcher:
-            output = dnf_ci.pylint_isolated(
+            output = dnf_ci.api.pylint_isolated(
                 ['d1', 'd2'], tempfile.gettempdir(), ['p1', 'p2'], 'root')
         self.assertEqual(output, b'', 'incorrect output')
         self.assertEqual(
@@ -1232,7 +1232,7 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
             lint_exitout=(1, output))
         with self.assertRaises(subprocess.CalledProcessError) as context:
             with patcher:
-                dnf_ci.pylint_isolated(
+                dnf_ci.api.pylint_isolated(
                     ['d1', 'd2'], tempfile.gettempdir(), ['p1', 'p2'], 'root')
         self.assertEqual(
             context.exception.returncode, 1, 'incorrect status')

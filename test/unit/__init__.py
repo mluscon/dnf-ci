@@ -15,21 +15,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Package representing the software part of the project.
-
-:var NAME: name of the software
-:type NAME: str
-:var VERSION: version of the software
-:type VERSION: str
-
-"""
-
-
-from __future__ import absolute_import
-from __future__ import unicode_literals
-
-
-NAME = 'dnf-ci'
-
-
-VERSION = '1.0.0dev'
+"""Test isolated units of the source code."""

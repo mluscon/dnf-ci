@@ -45,10 +45,14 @@ import unittest
 TESTMODNAMES = {
     # some tools may walk packages recursively -- avoid that
     'dnf_ci.__init__',
+    'dnf_ci.api',
+    'dnf_ci.cli',
     'setup',
     'test.__init__',
     'test.test_code',
-    'test.test_unit'}
+    'test.unit.__init__',
+    'test.unit.test_api',
+    'test.unit.test_cli'}
 
 
 def _findsrcfile(name):
@@ -134,6 +138,10 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
                 '    "sphinx.ext.autodoc",\n'
                 '    "sphinx.ext.intersphinx"]\n'
                 'nitpick_ignore = [\n'
+                '    ("py:obj", "_clone_dn2repo"),\n'
+                '    ("py:obj", "_output2phaserepo"),\n'
+                '    ("py:obj", "_phase2repo2success"),\n'
+                '    ("py:obj", "_srpm2repo"),\n'
                 '    ("py:obj", "archive"),\n'
                 '    ("py:obj", "chown"),\n'
                 '    ("py:obj", "cmake"),\n'
@@ -142,7 +150,7 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
                 '    ("py:obj", "dict[str, list[int]]"),\n'
                 '    ("py:obj", "dict[str, str]"),\n'
                 '    ("py:obj", "dict[str, str] | None"),\n'
-                '    ("py:obj", "dict[str, test.test_unit._Executable] | '
+                '    ("py:obj", "dict[str, test.unit.test_api._Executable] | '
                 'None"),\n'
                 '    ("py:obj", "dict[str, tuple[int, bytes]]"),\n'
                 '    ("py:obj", "'
@@ -165,17 +173,25 @@ class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
                 '    ("py:obj", "list[str] | None"),\n'
                 '    ("py:obj", "mock"),\n'
                 '    ("py:obj", "path_fn2exe"),\n'
+                '    ("py:obj", "pep8fn"),\n'
+                '    ("py:obj", "phase2fn2repo"),\n'
+                '    ("py:obj", "pyflakesfn"),\n'
+                '    ("py:obj", "pylintfn"),\n'
                 '    ("py:obj", "regex"),\n'
                 '    ("py:obj", "repo2source"),\n'
                 '    ("py:obj", "root2packages"),\n'
                 '    ("py:obj", "root2subprocess"),\n'
+                '    ("py:obj", "rpm2rootrepo"),\n'
+                '    ("py:obj", "rpmdn"),\n'
                 '    ("py:obj", "set[str]"),\n'
                 '    ("py:obj", "stdout"),\n'
+                '    ("py:obj", "stdstreams"),\n'
                 '    ("py:obj", "str | None"),\n'
+                '    ("py:obj", "str | bool | None"),\n'
                 '    ("py:obj", "streams"),\n'
-                '    ("py:obj", "test.test_unit._ArchiveStub | None"),\n'
-                '    ("py:obj", "test.test_unit._CmakeStub | None"),\n'
-                '    ("py:obj", "test.test_unit._StandardStreamsStub | '
+                '    ("py:obj", "test.unit.test_api._ArchiveStub | None"),\n'
+                '    ("py:obj", "test.unit.test_api._CmakeStub | None"),\n'
+                '    ("py:obj", "test.unit.test_api._StandardStreamsStub | '
                 'None"),\n'
                 '    ("py:obj", "tuple2exit"),\n'
                 '    ("py:obj", "tuple2exitout"),\n'

@@ -35,6 +35,8 @@ import docutils.core
 import docutils.nodes
 import setuptools
 
+import dnf_ci
+
 
 def _first_paragraph(restructuredtext):
     r"""Return the first paragraph of a text.
@@ -61,8 +63,8 @@ if __name__ == '__main__':
     with codecs.open('README', encoding='utf-8') as _file:
         README = _file.read()
     setuptools.setup(
-        name='dnf-ci',
-        version='1.0.0dev',
+        name=dnf_ci.NAME,
+        version=dnf_ci.VERSION,
         author='Radek Holý',
         author_email='rholy@redhat.com',
         url='https://github.com/rholy/dnf-ci',
@@ -72,6 +74,7 @@ if __name__ == '__main__':
         keywords=['DNF', 'continuous integration'],
         classifiers=[
             'Development Status :: 2 - Pre-Alpha',
+            'Environment :: Console',
             'License :: OSI Approved :: Apache Software License',
             'Operating System :: OS Independent',
             'Programming Language :: Python :: ' +
