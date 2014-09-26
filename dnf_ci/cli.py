@@ -21,13 +21,14 @@ The command-line interface usage is::
 
     usage: PROG [-h] [-v] [-r DIRNAME] [-8 FILENAME] [-f FILENAME]
                 [-l FILENAME]
-                SOURCE ROOT
+                SOURCE MOCKCFG
 
     Test a DNF Git repository.
 
     positional arguments:
       SOURCE                name of a readable DNF Git repository
-      ROOT                  name of a writable Mock root
+      MOCKCFG               name of a configuration file specifying a writable
+                            Mock root
 
     optional arguments:
       -h, --help            show this help message and exit
@@ -46,13 +47,12 @@ The command-line interface usage is::
     of "package/dnf.spec" to the output of "package/archive" and run Mock with
     the sources path set to "$HOME/rpmbuild/SOURCES". It is also assumed that
     it is enough to run Pylint on the "dnf" and "tests" subdirectories and to
-    run Nose on the "tests" subdirectory. "cmake", "git", "mock" and
-    "mockchain" executables must be available. The target directory must be
-    readable by other users. Standard output and standard error must be
-    writable. The Mock root may be modified. Program cannot be called by a
-    superuser. If the source repository contains uncommitted changes or the
-    tests fail, the exit status is 1. If the command line is not valid, the
-    exit status is 2. Otherwise, a status of 0 is returned.
+    run Nose on the "tests" subdirectory. "cmake", "git" and "mock" executables
+    must be available. Standard output and standard error must be writable. The
+    Mock root may be modified. Program cannot be called by a superuser. If the
+    source repository contains uncommitted changes or the tests fail, the exit
+    status is 1. If the command line is not valid, the exit status is 2.
+    Otherwise, a status of 0 is returned.
 
 """
 
@@ -74,8 +74,6 @@ class _OutputConf(object):  # pylint: disable=too-few-public-methods
 
     """Program output configuration.
 
-    The RPM directory must be readable by other users.
-
     :ivar rpmdn: name of a writable directory for RPMs
     :type rpmdn: str | None
     :ivar pep8fn: name of a writable file for a Pep8 output
@@ -89,8 +87,6 @@ class _OutputConf(object):  # pylint: disable=too-few-public-methods
 
     def __init__(self, rpmdn, pep8fn, pyflakesfn, pylintfn):
         """Initialize the configuration.
-
-        The RPM directory must be readable by other users.
 
         :param rpmdn: name of a writable directory for RPMs
         :type rpmdn: str | None
@@ -108,7 +104,7 @@ class _OutputConf(object):  # pylint: disable=too-few-public-methods
         self.pylintfn = pylintfn
 
 
-def _test_in_root(repository, root, outconf):
+def _test_in_root(repository, mockcfg, outconf):
     """Test a DNF Git repository within a Mock root.
 
     It is assumed that the workflow is to build DNF, run "package/archive",
@@ -116,16 +112,17 @@ def _test_in_root(repository, root, outconf):
     "package/dnf.spec" to the output of "package/archive" and run Mock with
     the sources path set to "$HOME/rpmbuild/SOURCES". It is also assumed that
     it is enough to run Pylint on the "dnf" and "tests" subdirectories and to
-    run Nose on the "tests" subdirectory. "cmake", "git", "mock" and
-    "mockchain" executables must be available. Standard output and standard
-    error must be writable. The Mock root may be modified. This function cannot
-    be called by a superuser. If the tests fail, the exit status is 1.
-    Otherwise, a status of 0 is returned.
+    run Nose on the "tests" subdirectory. "cmake", "git" and "mock" executables
+    must be available. Standard output and standard error must be writable. The
+    Mock root may be modified. This function cannot be called by a superuser.
+    If the tests fail, the exit status is 1. Otherwise, a status of 0 is
+    returned.
 
     :param repository: name of the readable DNF Git repository
     :type repository: str
-    :param root: name of the writable Mock root
-    :type root: str
+    :param mockcfg: name of a configuration file specifying the writable Mock
+       root
+    :type mockcfg: str
     :param outconf: program output configuration
     :type outconf: dnf_ci.cli._OutputConf
     :return: the exit status
@@ -136,19 +133,19 @@ def _test_in_root(repository, root, outconf):
         clonedn = os.path.join(dirname, 'repo-dnf')
         dnf_ci.api.clone(repository, clonedn)
         srpmdn = os.path.join(dirname, 'srpms')
-        dnf_ci.api.build_dnf(clonedn, srpmdn, root)
-        srpms = [
+        dnf_ci.api.build_dnf(clonedn, srpmdn, mockcfg)
+        srpms = (
             os.path.join(root_dirs_files[0], basename)
             for root_dirs_files in os.walk(srpmdn)
             for basename in root_dirs_files[2]
-            if basename.endswith('.src.rpm')]
+            if basename.endswith('.src.rpm'))
         rpmdn = outconf.rpmdn or os.path.join(dirname, 'rpms')
         try:
-            dnf_ci.api.build_rpms(srpms, rpmdn, root)
+            dnf_ci.api.build_rpm(next(srpms), rpmdn, mockcfg)
         except ValueError:
             print('RPM build failed.', file=sys.stderr)
         try:
-            output = dnf_ci.api.pep8_isolated(clonedn, root)
+            output = dnf_ci.api.pep8_isolated(clonedn, mockcfg)
         except subprocess.CalledProcessError as err:
             print('Pep8 failed. See the log file.', file=sys.stderr)
             output = err.output
@@ -156,7 +153,7 @@ def _test_in_root(repository, root, outconf):
             with open(outconf.pep8fn, 'wb') as file:
                 file.write(output)
         try:
-            output = dnf_ci.api.pyflakes_isolated(clonedn, root)
+            output = dnf_ci.api.pyflakes_isolated(clonedn, mockcfg)
         except subprocess.CalledProcessError as err:
             print('Pyflakes failed. See the log file.', file=sys.stderr)
             output = err.output
@@ -170,14 +167,14 @@ def _test_in_root(repository, root, outconf):
             if basename.endswith('.rpm')]
         try:
             output = dnf_ci.api.pylint_isolated(
-                ['dnf', 'tests'], clonedn, rpms, root)
+                ['dnf', 'tests'], clonedn, rpms, mockcfg)
         except subprocess.CalledProcessError as err:
             print('Pylint failed. See the log file.', file=sys.stderr)
             output = err.output
         if outconf.pylintfn:
             with open(outconf.pylintfn, 'wb') as file:
                 file.write(output)
-        if not dnf_ci.api.run_tests('tests', clonedn, rpms, root):
+        if not dnf_ci.api.run_tests('tests', clonedn, rpms, mockcfg):
             print('Tests failed.', file=sys.stderr)
             return 1
     return 0
@@ -190,13 +187,14 @@ def main():
 
         usage: PROG [-h] [-v] [-r DIRNAME] [-8 FILENAME] [-f FILENAME]
                     [-l FILENAME]
-                    SOURCE ROOT
+                    SOURCE MOCKCFG
 
         Test a DNF Git repository.
 
         positional arguments:
           SOURCE                name of a readable DNF Git repository
-          ROOT                  name of a writable Mock root
+          MOCKCFG               name of a configuration file specifying a
+                                writable Mock root
 
         optional arguments:
           -h, --help            show this help message and exit
@@ -216,12 +214,12 @@ def main():
         run Mock with the sources path set to "$HOME/rpmbuild/SOURCES". It is
         also assumed that it is enough to run Pylint on the "dnf" and "tests"
         subdirectories and to run Nose on the "tests" subdirectory. "cmake",
-        "git", "mock" and "mockchain" executables must be available. The target
-        directory must be readable by other users. Standard output and standard
-        error must be writable. The Mock root may be modified. Program cannot
-        be called by a superuser. If the source repository contains uncommitted
-        changes or the tests fail, the exit status is 1. If the command line is
-        not valid, the exit status is 2. Otherwise, a status of 0 is returned.
+        "git" and "mock" executables must be available. Standard output and
+        standard error must be writable. The Mock root may be modified. Program
+        cannot be called by a superuser. If the source repository contains
+        uncommitted changes or the tests fail, the exit status is 1. If the
+        command line is not valid, the exit status is 2. Otherwise, a status of
+        0 is returned.
 
     :raise SystemExit: with integer exit status at the end of the execution
 
@@ -234,9 +232,8 @@ def main():
         '"package/archive" and run Mock with the sources path set to '
         '"$HOME/rpmbuild/SOURCES". It is also assumed that it is enough to '
         'run Pylint on the "dnf" and "tests" subdirectories and to run Nose on'
-        ' the "tests" subdirectory. "cmake", "git", "mock" and "mockchain" '
-        'executables must be available. The target directory must be readable '
-        'by other users. Standard output and standard error must be writable. '
+        ' the "tests" subdirectory. "cmake", "git" and "mock" executables must'
+        ' be available. Standard output and standard error must be writable. '
         'The Mock root may be modified. Program cannot be called by a '
         'superuser. If the source repository contains uncommitted changes or '
         'the tests fail, the exit status is 1. If the command line is not '
@@ -260,7 +257,8 @@ def main():
     parser.add_argument(
         'SOURCE', help='name of a readable DNF Git repository')
     parser.add_argument(
-        'ROOT', help='name of a writable Mock root')
+        'MOCKCFG',
+        help='name of a configuration file specifying a writable Mock root')
     arguments = parser.parse_args()
 
     if dnf_ci.api.uncommitted_changes(arguments.SOURCE):
@@ -268,7 +266,7 @@ def main():
         sys.exit(1)
     outconf = _OutputConf(
         arguments.rpms, arguments.pep8, arguments.pyflakes, arguments.pylint)
-    sys.exit(_test_in_root(arguments.SOURCE, arguments.ROOT, outconf))
+    sys.exit(_test_in_root(arguments.SOURCE, arguments.MOCKCFG, outconf))
 
 
 if __name__ == '__main__':

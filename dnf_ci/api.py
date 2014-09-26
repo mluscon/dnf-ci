@@ -60,7 +60,7 @@ def clone(source, target):
     subprocess.call(['git', 'clone', '--quiet', source, target])
 
 
-def build_dnf(source, destination, root):
+def build_dnf(source, destination, mockcfg):
     """Build a SRPM from a DNF Git repository.
 
     It is assumed that the workflow is to build DNF, run "package/archive",
@@ -74,8 +74,9 @@ def build_dnf(source, destination, root):
     :type source: str
     :param destination: name of a writable directory for the results
     :type destination: str
-    :param root: name of a writable Mock root
-    :type root: str
+    :param mockcfg: name of a configuration file specifying a writable Mock
+       root
+    :type mockcfg: str
 
     """
     subprocess.call(['cmake', '.'], cwd=source)
@@ -90,8 +91,10 @@ def build_dnf(source, destination, root):
         for line in spec_file:
             print(line[:-1])
 
+    cfgdn, cfgbase = os.path.split(mockcfg)
     buildcmd = [
-        'mock', '--quiet', '--root=' + root, '--resultdir=' + destination,
+        'mock', '--quiet', '--configdir=' + cfgdn,
+        '--root=' + os.path.splitext(cfgbase)[0], '--resultdir=' + destination,
         '--no-cleanup-after', '--buildsrpm', '--spec=' + spec_fn,
         '--sources=' + os.path.expandvars('$HOME/rpmbuild/SOURCES')]
     subprocess.call(buildcmd)
@@ -118,14 +121,39 @@ def build_rpms(sources, destination, root):
         raise ValueError('build failed')
 
 
-def _mock_exec(root, cmdline, cwd='.', privileged=False):
+def build_rpm(source, destination, mockcfg):
+    """Build the RPMs from an SRPM.
+
+    "mock" executable must be available. The root is initialized. This function
+    cannot be called by a superuser.
+
+    :param sources: name of the readable SRPM file
+    :type sources: str
+    :param destination: name of a writable directory for the results
+    :type destination: str
+    :param mockcfg: name of a configuration file specifying a writable Mock
+       root
+    :type mockcfg: str
+    :raise ValueError: if the build fails
+
+    """
+    cfgdn, cfgbase = os.path.split(mockcfg)
+    cmd = [
+        'mock', '--quiet', '--configdir=' + cfgdn,
+        '--root=' + os.path.splitext(cfgbase)[0], '--resultdir=' + destination,
+        '--no-cleanup-after', '--rebuild', source]
+    if subprocess.call(cmd):
+        raise ValueError('build failed')
+
+
+def _mock_exec(mockcfg, cmdline, cwd='.', privileged=False):
     """Run a command non-interactively within a Mock root.
 
     "mock" executable must be available. The root must already be initialized.
     This function cannot be called by a superuser.
 
-    :param root: name of the root
-    :type root: str
+    :param mockcfg: name of a configuration file specifying the root
+    :type mockcfg: str
     :param cmdline: the command to be run
     :type cmdline: str
     :param cwd: name of a working directory relative to the root directory
@@ -137,15 +165,17 @@ def _mock_exec(root, cmdline, cwd='.', privileged=False):
     :raise subprocess.CalledProcessError: if the exit status is not zero
 
     """
+    cfgdn, cfgbase = os.path.split(mockcfg)
     cmd = [
-        'mock', '--quiet', '--root=' + root, '--cwd=' + cwd, '--chroot',
+        'mock', '--quiet', '--configdir=' + cfgdn,
+        '--root=' + os.path.splitext(cfgbase)[0], '--cwd=' + cwd, '--chroot',
         cmdline]
     if not privileged:
-        cmd.insert(3, '--unpriv')
+        cmd.insert(4, '--unpriv')
     return subprocess.check_output(cmd)
 
 
-def _exec_isolation(cmdlines, cwd, dependencies, root):
+def _exec_isolation(cmdlines, cwd, dependencies, mockcfg):
     """Execute commands non-interactively in isolation.
 
     "mock" executable must be available. The root must already be initialized.
@@ -160,26 +190,33 @@ def _exec_isolation(cmdlines, cwd, dependencies, root):
     :param dependencies: required installable dependencies as an argument for
        "yum install" command
     :type dependencies: list[str]
-    :param root: name of a writable Mock root
-    :type root: str
+    :param mockcfg: name of a configuration file specifying a writable Mock
+       root
+    :type mockcfg: str
     :return: joint standard output of the commands
     :rtype: bytes
     :raise subprocess.CalledProcessError: if any exit status is not zero
 
     """
+    cfgdn, cfgbase = os.path.split(mockcfg)
+    root = os.path.splitext(cfgbase)[0]
     mockdn = '/tmp/dnf-ci'
     rmcmdl = 'rm --recursive --force ' + mockdn
-    incmd = ['mock', '--quiet', '--root=' + root, '--install'] + dependencies
-    cpcmd = ['mock', '--quiet', '--root=' + root, '--copyin', cwd, mockdn]
+    incmd = ([
+        'mock', '--quiet', '--configdir=' + cfgdn, '--root=' + root,
+        '--install'] + dependencies)
+    cpcmd = [
+        'mock', '--quiet', '--configdir=' + cfgdn, '--root=' + root,
+        '--copyin', cwd, mockdn]
     chcmdl = 'chown --recursive :mockbuild ' + mockdn
-    _mock_exec(root, rmcmdl, privileged=True)
+    _mock_exec(mockcfg, rmcmdl, privileged=True)
     subprocess.call(incmd)
     subprocess.call(cpcmd)
-    _mock_exec(root, chcmdl, privileged=True)
+    _mock_exec(mockcfg, chcmdl, privileged=True)
     err = subprocess.CalledProcessError(0, None, b'')
     for cmdline in cmdlines:
         try:
-            err.output += _mock_exec(root, cmdline, mockdn)
+            err.output += _mock_exec(mockcfg, cmdline, mockdn)
         except subprocess.CalledProcessError as err_:
             if not err.returncode:
                 err.cmd, err.returncode = err_.cmd, err_.returncode
@@ -189,7 +226,7 @@ def _exec_isolation(cmdlines, cwd, dependencies, root):
     return err.output
 
 
-def run_tests(tests, cwd, dependencies, root):
+def run_tests(tests, cwd, dependencies, mockcfg):
     """Run unit tests in isolation.
 
     "mock" executable must be available. The root must already be initialized.
@@ -204,8 +241,9 @@ def run_tests(tests, cwd, dependencies, root):
     :param dependencies: required installable dependencies as an argument for
        "yum install" command
     :type dependencies: list[str]
-    :param root: name of a writable Mock root
-    :type root: str
+    :param mockcfg: name of a configuration file specifying a writable Mock
+       root
+    :type mockcfg: str
     :return: tests succeeded
     :rtype: bool
 
@@ -222,14 +260,14 @@ def run_tests(tests, cwd, dependencies, root):
     try:
         status, output = 0, _exec_isolation(
             itertools.chain.from_iterable(tcmds), cwd,
-            dependencies + ['python-nose', 'python3-nose'], root)
+            dependencies + ['python-nose', 'python3-nose'], mockcfg)
     except subprocess.CalledProcessError as err:
         status, output = err.returncode, err.output
     print(output.decode())
     return not status
 
 
-def pep8_isolated(dirname, root):
+def pep8_isolated(dirname, mockcfg):
     """Run "pep8" non-interactively in isolation.
 
     "mock" executable must be available. The root must already be initialized.
@@ -238,8 +276,9 @@ def pep8_isolated(dirname, root):
 
     :param dirname: name of the directory to be checked
     :type dirname: str
-    :param root: name of a writable Mock root
-    :type root: str
+    :param mockcfg: name of a configuration file specifying a writable Mock
+       root
+    :type mockcfg: str
     :return: standard output of the process
     :rtype: bytes
     :raise subprocess.CalledProcessError: if the exit status is not zero
@@ -247,10 +286,10 @@ def pep8_isolated(dirname, root):
     """
     return _exec_isolation(
         (exe + ' .' for exe in ['pep8', 'python3-pep8']), dirname,
-        ['python-pep8', 'python3-pep8'], root)
+        ['python-pep8', 'python3-pep8'], mockcfg)
 
 
-def pyflakes_isolated(dirname, root):
+def pyflakes_isolated(dirname, mockcfg):
     """Run "pyflakes" non-interactively in isolation.
 
     "mock" executable must be available. The root must already be initialized.
@@ -260,8 +299,9 @@ def pyflakes_isolated(dirname, root):
 
     :param dirname: name of the directory to be checked
     :type dirname: str
-    :param root: name of a writable Mock root
-    :type root: str
+    :param mockcfg: name of a configuration file specifying a writable Mock
+       root
+    :type mockcfg: str
     :return: standard output of the process
     :rtype: bytes
     :raise subprocess.CalledProcessError: if the exit status is not zero
@@ -269,10 +309,10 @@ def pyflakes_isolated(dirname, root):
     """
     return _exec_isolation(
         (exe + ' .' for exe in ['pyflakes', 'python3-pyflakes']), dirname,
-        ['pyflakes', 'python3-pyflakes'], root)
+        ['pyflakes', 'python3-pyflakes'], mockcfg)
 
 
-def pylint_isolated(reldns, cwd, dependencies, root):
+def pylint_isolated(reldns, cwd, dependencies, mockcfg):
     """Run "pylint" non-interactively in isolation.
 
     "mock" executable must be available. The root must already be initialized.
@@ -288,8 +328,9 @@ def pylint_isolated(reldns, cwd, dependencies, root):
     :param dependencies: required installable dependencies as an argument for
        "yum install" command
     :type dependencies: list[str]
-    :param root: name of a writable Mock root
-    :type root: str
+    :param mockcfg: name of a configuration file specifying a writable Mock
+       root
+    :type mockcfg: str
     :return: standard output of the process
     :rtype: bytes
     :raise subprocess.CalledProcessError: if the exit status is not zero
@@ -300,4 +341,4 @@ def pylint_isolated(reldns, cwd, dependencies, root):
         ' '.join([executable, tmplt, '--reports=n'] + reldns)
         for executable in ['pylint', 'python3-pylint'])
     return _exec_isolation(
-        cmds, cwd, dependencies + ['pylint', 'python3-pylint'], root)
+        cmds, cwd, dependencies + ['pylint', 'python3-pylint'], mockcfg)

@@ -43,8 +43,8 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
     :type _clone_dn2repo: dict[str, str]
     :ivar _srpm2repo: repository name for each SRPM name
     :type _srpm2repo: dict[str, str]
-    :ivar rpm2rootrepo: Mock root and repository name for each RPM name
-    :type rpm2rootrepo: dict[str, tuple[str, str]]
+    :ivar rpm2cfgrepo: Mock config and repository name for each RPM name
+    :type rpm2cfgrepo: dict[str, tuple[str, str]]
     :ivar _output2phaserepo: phase name and repository name for each standard
        output
     :type _output2phaserepo: dict[bytes, tuple[str, str]]
@@ -62,20 +62,20 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         self.stdstreams = io.StringIO(), io.StringIO()
         self._clone_dn2repo = {}
         self._srpm2repo = {}
-        self.rpm2rootrepo = {}
+        self.rpm2cfgrepo = {}
         self._output2phaserepo = {}
         self.phase2fn2repo = {}
         self._phase2repo2success = {}
 
     @staticmethod
     def _iter_argv(  # pylint: disable=too-many-arguments
-            repository, root, help_, version, rpms, pep8, pyflakes, pylint):
+            repository, mockcfg, help_, version, rpms, pep8, pyflakes, pylint):
         """Return iterator over command line arguments.
 
         :param repository: name of a repository used
         :type repository: str
-        :param root: name of a Mock root
-        :type root: str
+        :param mockcfg: name of a configuration file specifying a Mock root
+        :type mockcfg: str
         :param help_: insert the help switch
         :type help_: bool
         :param version: insert the version switch
@@ -103,7 +103,7 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         yield from optional('-f', pyflakes)
         yield from optional('-l', pylint)
         yield repository
-        yield root
+        yield mockcfg
 
     def _stub_clone(self, source, target):
         """Pretend to clone a Git repository.
@@ -117,39 +117,38 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         self._clone_dn2repo[target] = source
 
     def _stub_build_dnf(  # pylint: disable=unused-argument
-            self, source, destination, root):
+            self, source, destination, mockcfg):
         """Pretend to build a SRPM from a DNF Git repository.
 
         :param source: name of the source Git repository
         :type source: str
         :param destination: name of a directory for the results
         :type destination: str
-        :param root: name of a Mock root
-        :type root: str
+        :param mockcfg: name of a configuration file specifying a Mock root
+        :type mockcfg: str
 
         """
         srpm = os.path.join(
             destination, 'dnf-' + str(time.perf_counter()) + '.src.rpm')
         self._srpm2repo[srpm] = self._clone_dn2repo[source]
 
-    def _stub_build_rpms(self, sources, destination, root):
-        """Pretend to build the RPMs from SRPMs.
+    def _stub_build_rpm(self, source, destination, mockcfg):
+        """Pretend to build the RPMs from an SRPM.
 
-        :param sources: names of the SRPM files
-        :type sources: list[str]
+        :param source: name of the SRPM file
+        :type source: str
         :param destination: name of a directory for the results
         :type destination: str
-        :param root: name of a Mock root
-        :type root: str
+        :param mockcfg: name of a configuration file specifying a Mock root
+        :type mockcfg: str
         :raise ValueError: if the build fails
 
         """
-        for source in sources:
-            repo = self._srpm2repo[source]
-            if not self._phase2repo2success['rpm'][repo]:
-                raise ValueError('build failed')
-            rpm = os.path.join(destination, str(time.perf_counter()) + '.rpm')
-            self.rpm2rootrepo[rpm] = (root, repo)
+        repo = self._srpm2repo[source]
+        if not self._phase2repo2success['rpm'][repo]:
+            raise ValueError('build failed')
+        rpm = os.path.join(destination, str(time.perf_counter()) + '.rpm')
+        self.rpm2cfgrepo[rpm] = (mockcfg, repo)
 
     def stub_walk(self, top):
         """Pretend to generate the file names in a directory tree.
@@ -162,20 +161,20 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
 
         """
         root2basenames = {}
-        for filename in self._srpm2repo.keys() | self.rpm2rootrepo.keys():
+        for filename in self._srpm2repo.keys() | self.rpm2cfgrepo.keys():
             if os.path.commonprefix([top, filename]) == top:
                 root, basename = os.path.split(filename)
                 root2basenames.setdefault(root, set()).add(basename)
         for root in sorted(root2basenames):
             yield (root, [], list(sorted(root2basenames[root])))
 
-    def _stub_pep8_isolated(self, dirname, root):
+    def _stub_pep8_isolated(self, dirname, mockcfg):
         """Pretend to run "pep8" non-interactively in isolation.
 
         :param dirname: name of the directory to be checked
         :type dirname: str
-        :param root: name of a Mock root
-        :type root: str
+        :param mockcfg: name of a configuration file specifying a Mock root
+        :type mockcfg: str
         :return: standard output of the process
         :rtype: bytes
         :raise subprocess.CalledProcessError: if the exit status is not zero
@@ -186,16 +185,16 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         self._output2phaserepo[output] = 'pep8', repo
         if not self._phase2repo2success['pep8'][repo]:
             raise subprocess.CalledProcessError(
-                1, [root, 'pep8', dirname], output)
+                1, [mockcfg, 'pep8', dirname], output)
         return output
 
-    def _stub_pyflakes_isolated(self, dirname, root):
+    def _stub_pyflakes_isolated(self, dirname, mockcfg):
         """Pretend to run "pyflakes" non-interactively in isolation.
 
         :param dirname: name of the directory to be checked
         :type dirname: str
-        :param root: name of a Mock root
-        :type root: str
+        :param mockcfg: name of a configuration file specifying a Mock root
+        :type mockcfg: str
         :return: standard output of the process
         :rtype: bytes
         :raise subprocess.CalledProcessError: if the exit status is not zero
@@ -206,10 +205,10 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         self._output2phaserepo[output] = 'pyflakes', repo
         if not self._phase2repo2success['pyflakes'][repo]:
             raise subprocess.CalledProcessError(
-                1, [root, 'pyflakes', dirname], output)
+                1, [mockcfg, 'pyflakes', dirname], output)
         return output
 
-    def _stub_pylint_isolated(self, reldns, cwd, dependencies, root):
+    def _stub_pylint_isolated(self, reldns, cwd, dependencies, mockcfg):
         """Pretend to run "pylint" non-interactively in isolation.
 
         :param reldns: names of directories to be checked relative to the
@@ -220,18 +219,17 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :param dependencies: required dependencies as an argument for
            "yum install" command
         :type dependencies: list[str]
-        :param root: name of a Mock root
-        :type root: str
+        :param mockcfg: name of a configuration file specifying a Mock root
+        :type mockcfg: str
         :return: standard output of the process
         :rtype: bytes
         :raise subprocess.CalledProcessError: if the exit status is not zero
 
         """
         out, repo = str(time.perf_counter()).encode(), self._clone_dn2repo[cwd]
-        rootrepos = (
-            self.rpm2rootrepo.get(rpm, (None, None)) for rpm in dependencies)
-        deprepos = (repo_ for root, repo_ in rootrepos if root == root)
-        exccmd = [root] + dependencies + ['pylint', cwd] + reldns
+        crs = (self.rpm2cfgrepo.get(rpm, (None, None)) for rpm in dependencies)
+        deprepos = (repo_ for cfg, repo_ in crs if cfg == mockcfg)
+        exccmd = [mockcfg] + dependencies + ['pylint', cwd] + reldns
         if repo not in deprepos:
             out = (
                 cwd.encode() +
@@ -268,7 +266,7 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         yield file_
 
     def _stub_run_tests(  # pylint: disable=unused-argument
-            self, tests, cwd, dependencies, root):
+            self, tests, cwd, dependencies, mockcfg):
         """Pretend to run unit tests.
 
         :param tests: the tests to be run
@@ -278,31 +276,31 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :param dependencies: required dependencies as an argument for
            "yum install" command
         :type dependencies: list[str]
-        :param root: name of a Mock root
-        :type root: str
+        :param mockcfg: name of a configuration file specifying a Mock root
+        :type mockcfg: str
         :return: tests succeeded
         :rtype: bool
 
         """
         repo = self._clone_dn2repo[cwd]
-        rootrepos = (
-            self.rpm2rootrepo.get(rpm, (None, None)) for rpm in dependencies)
-        deprepos = (repo_ for root, repo_ in rootrepos if root == root)
+        crs = (self.rpm2cfgrepo.get(rpm, (None, None)) for rpm in dependencies)
+        deprepos = (repo_ for cfg, repo_ in crs if cfg == mockcfg)
         if repo not in deprepos:
             return False
         return self._phase2repo2success['tests'][repo]
 
     @contextlib.contextmanager
     def patch(  # pylint: disable=too-many-arguments
-            self, repository, root, help_=False, version=False,
+            self, repository, mockcfg, help_=False, version=False,
             uncommitted=False, rpms=None, pep8=None, pyflakes=None,
             pylint=None, success=True):
         """Return a context manager that patch all the relevant functions.
 
         :param repository: name of a repository used
         :type repository: str | None
-        :param root: name of a Mock root used
-        :type root: str
+        :param mockcfg: name of a configuration file specifying a Mock root
+           used
+        :type mockcfg: str
         :param help_: insert the help switch into the command line arguments
         :type help_: bool
         :param version: insert the version switch into the command line
@@ -327,7 +325,7 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
 
         """
         argv = ['prog'] if repository is None else list(self._iter_argv(
-            repository, root, help_, version, rpms, pep8, pyflakes, pylint))
+            repository, mockcfg, help_, version, rpms, pep8, pyflakes, pylint))
         phase2success = {
             'rpm': rpms is not False,
             'pep8': pep8 is not False,
@@ -353,7 +351,7 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
                 unittest.mock.patch(
                     'dnf_ci.api.build_dnf', self._stub_build_dnf), \
                 unittest.mock.patch(
-                    'dnf_ci.api.build_rpms', self._stub_build_rpms), \
+                    'dnf_ci.api.build_rpm', self._stub_build_rpm), \
                 unittest.mock.patch(
                     'os.walk', self.stub_walk, create=True), \
                 unittest.mock.patch(
@@ -377,20 +375,22 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', help_=True):
+            with self.patch(tempfile.gettempdir(), mockcfg, help_=True):
                 dnf_ci.cli.main()
         self.assertIn(
             'usage: prog [-h] [-v] [-r DIRNAME] [-8 FILENAME] [-f FILENAME] '
-            '[-l FILENAME]\n            SOURCE ROOT\n\nTest a DNF Git '
+            '[-l FILENAME]\n            SOURCE MOCKCFG\n\nTest a DNF Git '
             'repository.\n\npositional arguments:\n  SOURCE                '
-            'name of a readable DNF Git repository\n  ROOT                  '
-            'name of a writable Mock root\n\noptional arguments:\n  -h, --help'
-            '            show this help message and exit\n  -v, --version     '
-            '    show program\'s version number and exit\n  -r DIRNAME, --rpms'
-            ' DIRNAME\n                        name of a writable directory '
-            'for the RPMs\n  -8 FILENAME, --pep8 FILENAME\n                   '
-            '     name of a writable file for the Pep8 output\n  -f FILENAME, '
+            'name of a readable DNF Git repository\n  MOCKCFG               '
+            'name of a configuration file specifying a writable\n             '
+            '           Mock root\n\noptional arguments:\n  -h, --help        '
+            '    show this help message and exit\n  -v, --version         show'
+            ' program\'s version number and exit\n  -r DIRNAME, --rpms DIRNAME'
+            '\n                        name of a writable directory for the '
+            'RPMs\n  -8 FILENAME, --pep8 FILENAME\n                        '
+            'name of a writable file for the Pep8 output\n  -f FILENAME, '
             '--pyflakes FILENAME\n                        name of a writable '
             'file for the Pyflakes output\n  -l FILENAME, --pylint FILENAME\n '
             '                       name of a writable file for the Pylint '
@@ -400,14 +400,13 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
             ' output of "package/archive" and run Mock with the\nsources path '
             'set to "$HOME/rpmbuild/SOURCES". It is also assumed that it is\n'
             'enough to run Pylint on the "dnf" and "tests" subdirectories and '
-            'to run Nose\non the "tests" subdirectory. "cmake", "git", "mock" '
-            'and "mockchain"\nexecutables must be available. The target '
-            'directory must be readable by other\nusers. Standard output and '
-            'standard error must be writable. The Mock root may\nbe modified. '
-            'Program cannot be called by a superuser. If the source repository'
-            '\ncontains uncommitted changes or the tests fail, the exit status'
-            ' is 1. If the\ncommand line is not valid, the exit status is 2. '
-            'Otherwise, a status of 0 is\nreturned.\n',
+            'to run Nose\non the "tests" subdirectory. "cmake", "git" and '
+            '"mock" executables must be\navailable. Standard output and '
+            'standard error must be writable. The Mock root\nmay be modified. '
+            'Program cannot be called by a superuser. If the source\n'
+            'repository contains uncommitted changes or the tests fail, the '
+            'exit status is\n1. If the command line is not valid, the exit '
+            'status is 2. Otherwise, a status\nof 0 is returned.\n',
             self.stdstreams[0].getvalue(),
             'not printed')
         self.assertEqual(context.exception.code, 0, 'incorrect exit status')
@@ -418,8 +417,9 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', version=True):
+            with self.patch(tempfile.gettempdir(), mockcfg, version=True):
                 dnf_ci.cli.main()
         self.assertIn(
             dnf_ci.VERSION, self.stdstreams[1].getvalue(), 'not printed')
@@ -431,8 +431,9 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', uncommitted=True):
+            with self.patch(tempfile.gettempdir(), mockcfg, uncommitted=True):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 1, 'incorrect exit status')
 
@@ -442,8 +443,9 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', rpms=False):
+            with self.patch(tempfile.gettempdir(), mockcfg, rpms=False):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 1, 'incorrect exit status')
 
@@ -453,17 +455,18 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         rpms = os.path.join(tempfile.gettempdir(), 'rpms')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', rpms=rpms):
+            with self.patch(tempfile.gettempdir(), mockcfg, rpms=rpms):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 0, 'incorrect exit status')
-        rootrepos = {
-            self.rpm2rootrepo[os.path.join(root_dirs_files[0], basename)]
+        cfgrepos = {
+            self.rpm2cfgrepo[os.path.join(root_dirs_files[0], basename)]
             for root_dirs_files in self.stub_walk(rpms)
             for basename in root_dirs_files[2]}
         self.assertEqual(
-            rootrepos, {('root', tempfile.gettempdir())},
+            cfgrepos, {(mockcfg, tempfile.gettempdir())},
             'incorrect repositories')
 
     def test_main_pep8_failure(self):
@@ -472,8 +475,9 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', pep8=False):
+            with self.patch(tempfile.gettempdir(), mockcfg, pep8=False):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 0, 'incorrect exit status')
 
@@ -483,9 +487,10 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         pep8 = os.path.join(tempfile.gettempdir(), 'pep8.log')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', pep8=pep8):
+            with self.patch(tempfile.gettempdir(), mockcfg, pep8=pep8):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 0, 'incorrect exit status')
         self.assertEqual(
@@ -498,8 +503,9 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', pyflakes=False):
+            with self.patch(tempfile.gettempdir(), mockcfg, pyflakes=False):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 0, 'incorrect exit status')
 
@@ -509,9 +515,10 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         pyflakes = os.path.join(tempfile.gettempdir(), 'pyflakes.log')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', pyflakes=pyflakes):
+            with self.patch(tempfile.gettempdir(), mockcfg, pyflakes=pyflakes):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 0, 'incorrect exit status')
         self.assertEqual(
@@ -524,8 +531,9 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', pylint=False):
+            with self.patch(tempfile.gettempdir(), mockcfg, pylint=False):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 0, 'incorrect exit status')
 
@@ -535,9 +543,10 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         pylint = os.path.join(tempfile.gettempdir(), 'pylint.log')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', pylint=pylint):
+            with self.patch(tempfile.gettempdir(), mockcfg, pylint=pylint):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 0, 'incorrect exit status')
         self.assertEqual(
@@ -550,8 +559,9 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(tempfile.gettempdir(), 'root', success=False):
+            with self.patch(tempfile.gettempdir(), mockcfg, success=False):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 1, 'incorrect exit status')
 
@@ -561,8 +571,9 @@ class CommandLineTestCase(unittest.TestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.assertRaises(SystemExit, msg='not raised') as context:
-            with self.patch(None, 'root'):
+            with self.patch(None, mockcfg):
                 dnf_ci.cli.main()
         self.assertEqual(context.exception.code, 2, 'incorrect exit status')
 

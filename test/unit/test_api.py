@@ -93,19 +93,23 @@ class _MockResultsTestCase(unittest.TestCase):  # pylint: disable=R0904
 
     """Test case interested in "mock" executable results.
 
-    :ivar root2packages: installed packages for each Mock root
-    :type root2packages: dict[str, set[str]]
-    :ivar dn2tuple: spec file content, Git revision and Mock root for name of
+    :ivar cfg2packages: installed packages for each Mock config
+    :type cfg2packages: dict[str, set[str]]
+    :ivar dn2tuple: spec file content, Git revision and Mock config for name of
        each directory containing the made SRPMs
     :type dn2tuple: dict[str, tuple[str, str, str]]
+    :ivar dn2srpmcfg: SRPM and Mock config for each directory containing the
+       made RPMs
+    :type dn2srpmcfg: dict[str, tuple[set[str], str]]
 
     """
 
     def setUp(self):
         """Prepare the test fixture."""
         super().setUp()
-        self.root2packages = {}
+        self.cfg2packages = {}
         self.dn2tuple = {}
+        self.dn2srpmcfg = {}
 
 
 class _Executable(metaclass=abc.ABCMeta):  # pylint: disable=R0903
@@ -285,12 +289,14 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
     :type streams: test.unit.test_api._StandardStreamsStub
     :ivar dn2src: source for each directory name
     :type dn2src: dict[str, str]
-    :ivar root2subprocess: "subprocess" module for each Mock root
-    :type root2subprocess: dict[str, test.unit.test_api._SubprocessStub]
+    :ivar cfg2subprocess: "subprocess" module for each Mock config
+    :type cfg2subprocess: dict[str, test.unit.test_api._SubprocessStub]
+    :ivar failing: name of the SRPM that cannot be built
+    :type failing: str | None
 
     """
 
-    def __init__(self, test, archive=None, streams=None):
+    def __init__(self, test, archive=None, streams=None, failing=None):
         """Initialize the stub.
 
         :param test: the current test
@@ -299,6 +305,8 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
         :type archive: test.unit.test_api._ArchiveStub | None
         :param streams: the standard streams
         :type streams: test.unit.test_api._StandardStreamsStub | None
+        :param failing: name of the SRPM that cannot be built
+        :type failing: str | None
 
         """
         super().__init__()
@@ -306,22 +314,22 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
         self.archive = archive or _ArchiveStub()
         self.streams = streams or _StandardStreamsStub()
         self.dn2src = {}
-        self.root2subprocess = {}
+        self.cfg2subprocess = {}
+        self.failing = failing
 
     @staticmethod
-    def _rootpath(root, path):
+    def _rootpath(config, path):
         """Get host path for a path in a Mock root.
 
-        :param root: name of the root
-        :type root: str
+        :param config: name of the config file
+        :type config: str
         :param path: the path name
         :type path: str
         :return: the host path name
         :rtype: str
 
         """
-        return os.path.join(
-            tempfile.gettempdir(), 'mock', root, path.lstrip(os.sep))
+        return os.path.join(config, path.lstrip(os.sep))
 
     @staticmethod
     def _split_commandline(line):
@@ -342,22 +350,22 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
                 start = end + 1
         yield line[start:]
 
-    def _install(self, root, packages):
+    def _install(self, config, packages):
         """Install packages into a root.
 
-        :param root: name of the root
-        :type root: str
+        :param config: name of the config file
+        :type config: str
         :param packages: the packages as an argument for "yum install" command
         :type packages: list[str]
 
         """
-        self.test.root2packages[root] = set(packages)
+        self.test.cfg2packages[config] = set(packages)
 
-    def _copyin(self, root, source, destination):
+    def _copyin(self, config, source, destination):
         """Copy a directory recursively into a root.
 
-        :param root: name of the root
-        :type root: str
+        :param config: name of the config file
+        :type config: str
         :param source: name of the file or directory on the host
         :type source: str
         :param destination: name of the non-existant directory inside the root
@@ -366,17 +374,34 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
         :rtype: int
 
         """
-        destination = self._rootpath(root, destination)
+        destination = self._rootpath(config, destination)
         if destination in self.dn2src:
             return 1
         self.dn2src[destination] = source
         return 0
 
-    def _exec(self, root, cmdline, cwd, privileged):
+    @staticmethod
+    def _parse_exec_args(args):
+        """Parse command line arguments for a command execution within a root.
+
+        :param args: the command line arguments
+        :type args: list[str]
+        :return: the command, name of the working directory and the root
+           privileges
+        :rtype: tuple[str, str, bool]
+
+        """
+        args, privileged = args[:], True
+        if args[4] == '--unpriv':
+            args.pop(4)
+            privileged = False
+        return args[6], args[4][6:], privileged
+
+    def _exec(self, config, cmdline, cwd, privileged):
         """Run a command non-interactively within a root.
 
-        :param root: name of the root
-        :type root: str
+        :param config: name of the config file
+        :type config: str
         :param cmdline: the command to be run
         :type cmdline: str
         :param cwd: name of a working directory relative to the root directory
@@ -389,15 +414,15 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
 
         """
         command = list(self._split_commandline(cmdline))
-        return self.root2subprocess[root].check_output(
-            command, self._rootpath(root, cwd), privileged)
+        return self.cfg2subprocess[config].check_output(
+            command, self._rootpath(config, cwd), privileged)
 
     def _buildsrpm(  # pylint: disable=too-many-arguments
-            self, root, spec, sources, result, cwd):
+            self, config, spec, sources, result, cwd):
         """Build an SRPM within a root.
 
-        :param root: name of the root
-        :type root: str
+        :param config: name of the config file
+        :type config: str
         :param spec: name of the spec file on the host
         :type spec: str
         :param sources: name of the sources directory on the host
@@ -411,7 +436,28 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
         self.test.dn2tuple[os.path.join(cwd, result)] = (
             self.streams.fn2file[os.path.join(cwd, spec)].getvalue(),
             self.archive.dn2rev[os.path.join(cwd, sources)],
-            root)
+            config)
+
+    def _rebuild(self, config, srpm, result, cwd):
+        """Build an RPM within a root.
+
+        :param config: name of the config file
+        :type config: str
+        :param srpm: name of the SRPM on the host
+        :type srpm: str
+        :param result: name of the result direcotyr on the host
+        :type result: str
+        :param cwd: name of a working directory
+        :type cwd: str
+        :return: the exit status
+        :rtype: int
+
+        """
+        if srpm == self.failing:
+            return 1
+        self.test.dn2srpmcfg[os.path.join(cwd, result)] = (
+            os.path.join(cwd, srpm), config)
+        return 0
 
     def __call__(self, args, cwd, env, privileged):
         """Call the executable with command line arguments.
@@ -429,22 +475,22 @@ class _MockStub(_Executable):  # pylint: disable=too-few-public-methods
         :raise subprocess.CalledProcessError: if the exit status is not zero
 
         """
-        status, output, root = 0, b'', args[2][7:]
-        if args[3] == '--install':
-            self._install(root, args[4:])
-        elif args[3] == '--copyin':
-            status = self._copyin(root, os.path.join(cwd, args[4]), args[5])
-        elif '--chroot' in args[4:6]:
-            normargs, priv = args[:], True
-            if normargs[3] == '--unpriv':
-                normargs.pop(3)
-                priv = False
+        status, output = 0, b''
+        cfg = os.path.join(args[2][12:], args[3][7:] + '.cfg')
+        if args[4] == '--install':
+            self._install(cfg, args[5:])
+        elif args[4] == '--copyin':
+            status = self._copyin(cfg, os.path.join(cwd, args[5]), args[6])
+        elif '--chroot' in args[5:7]:
+            cmdline, rcwd, privileged = self._parse_exec_args(args)
             try:
-                output = self._exec(root, normargs[5], normargs[3][6:], priv)
+                output = self._exec(cfg, cmdline, rcwd, privileged)
             except subprocess.CalledProcessError as err:
                 status, output = err.returncode, err.output
+        elif args[6] == '--buildsrpm':
+            self._buildsrpm(cfg, args[7][7:], args[8][10:], args[4][12:], cwd)
         else:
-            self._buildsrpm(root, args[6][7:], args[7][10:], args[3][12:], cwd)
+            status = self._rebuild(cfg, args[7], args[4][12:], cwd)
         if status:
             raise subprocess.CalledProcessError(status, args, output)
         return output
@@ -971,11 +1017,12 @@ class DNFBuildTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         """
         destination = os.path.join(tempfile.gettempdir(), 'build')
         spec = '%global gitrev abCD012\nrest of original\n'
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.patch(tempfile.gettempdir(), spec, 'bcDE123'):
-            dnf_ci.api.build_dnf(tempfile.gettempdir(), destination, 'root')
+            dnf_ci.api.build_dnf(tempfile.gettempdir(), destination, mockcfg)
         self.assertEqual(
             self.dn2tuple[destination],
-            ('%global gitrev bcDE123\nrest of original\n', 'bcDE123', 'root'),
+            ('%global gitrev bcDE123\nrest of original\n', 'bcDE123', mockcfg),
             'not built')
 
 
@@ -983,7 +1030,7 @@ class MockchainTestCase(unittest.TestCase):  # pylint: disable=R0904
 
     """Mockchain executable test case.
 
-    :ivar dn2tuple: names of RPMS and Mock root for name of each directory
+    :ivar dn2tuple: names of RPMS and Mock config for name of each directory
        containing the made SRPMs
     :type dn2tuple: dict[str, tuple[set[str], str]]
 
@@ -1034,9 +1081,10 @@ class MockchainTestCase(unittest.TestCase):  # pylint: disable=R0904
 
         """
         srpm = os.path.join(tempfile.gettempdir(), 'a.src.rpm')
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         with self.assertRaises(ValueError, msg='not raised'):
             with self.patch({srpm}):
-                dnf_ci.api.build_rpms([srpm], 'build', 'root')
+                dnf_ci.api.build_rpms([srpm], 'build', mockcfg)
 
 
 class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
@@ -1045,14 +1093,18 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
 
     @contextlib.contextmanager
     def patch(  # pylint: disable=too-many-arguments
-            self, cwd, root, tests='tests', nose_exit=0, pep_exitout=(0, b''),
-            flakes_exitout=(0, b''), lint_reldns=None, lint_exitout=(0, b'')):
+            self, cwd, mockcfg, failing=None, tests='tests', nose_exit=0,
+            pep_exitout=(0, b''), flakes_exitout=(0, b''), lint_reldns=None,
+            lint_exitout=(0, b'')):
         """Return a context manager that patch all the relevant functions.
 
         :param cwd: name of a working directory used
         :type cwd: str
-        :param root: name of a Mock root used
-        :type root: str
+        :param mockcfg: name of a configuration file specifying a Mock root
+           used
+        :type mockcfg: str
+        :param failing: name of the SRPM that cannot be built
+        :type failing: str | None
         :param tests: tests used
         :type tests: str
         :param nose_exit: exit status of some Nose processes
@@ -1076,8 +1128,8 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
             mktuple(), mktuple(locale='cs_CZ.utf8'), mktuple(capture=False)]
         lint_reldns = tuple(lint_reldns or ())
         chown = _ChownStub()
-        mock = _MockStub(self)
-        mock.root2subprocess[root] = _SubprocessStub(path_fn2exe={
+        mock = _MockStub(self, failing=failing)
+        mock.cfg2subprocess[mockcfg] = _SubprocessStub(path_fn2exe={
             'rm': _RmStub(mock),
             'chown': chown,
             'nosetests-2.7': _NoseStub(mock, chown, {
@@ -1104,18 +1156,49 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
                     'subprocess.check_output', subp.check_output):
             yield
 
+    def test_build_rpm_buildable(self):
+        """Test building with a buildable RPM.
+
+        :raise AssertionError: if the test fails
+
+        """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
+        with self.patch(tempfile.gettempdir(), mockcfg):
+            dnf_ci.api.build_rpm(
+                os.path.join(tempfile.gettempdir(), 'p.src.rpm'),
+                os.path.join(tempfile.gettempdir(), 'build'),
+                mockcfg)
+        self.assertEqual(
+            self.dn2srpmcfg[os.path.join(tempfile.gettempdir(), 'build')],
+            (os.path.join(tempfile.gettempdir(), 'p.src.rpm'), mockcfg),
+            'not built')
+
+    def test_build_rpm_nonbuildable(self):
+        """Test building with a non-buildable RPM.
+
+        :raise AssertionError: if the test fails
+
+        """
+        srpm = os.path.join(tempfile.gettempdir(), 'p.src.rpm')
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
+        with self.assertRaises(ValueError):
+            with self.patch(tempfile.gettempdir(), mockcfg, failing=srpm):
+                dnf_ci.api.build_rpm(
+                    srpm, os.path.join(tempfile.gettempdir(), 'bld'), mockcfg)
+
     def test_run_tests_successful(self):
         """Test running with successful tests.
 
         :raise AssertionError: if the test fails
 
         """
-        with self.patch(tempfile.gettempdir(), 'root', 'tests', nose_exit=0):
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
+        with self.patch(tempfile.gettempdir(), mockcfg, 'tests', nose_exit=0):
             success = dnf_ci.api.run_tests(
-                'tests', tempfile.gettempdir(), ['pkg1', 'pkg2'], 'root')
+                'tests', tempfile.gettempdir(), ['pkg1', 'pkg2'], mockcfg)
         self.assertTrue(success, 'tests failed')
         self.assertEqual(
-            self.root2packages['root'],
+            self.cfg2packages[mockcfg],
             {'pkg1', 'pkg2', 'python-nose', 'python3-nose'},
             'not installed')
 
@@ -1125,12 +1208,13 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
-        with self.patch(tempfile.gettempdir(), 'root', 'tests', nose_exit=1):
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
+        with self.patch(tempfile.gettempdir(), mockcfg, 'tests', nose_exit=1):
             success = dnf_ci.api.run_tests(
-                'tests', tempfile.gettempdir(), ['pkg1', 'pkg2'], 'root')
+                'tests', tempfile.gettempdir(), ['pkg1', 'pkg2'], mockcfg)
         self.assertFalse(success, 'tests succeeded')
         self.assertEqual(
-            self.root2packages['root'],
+            self.cfg2packages[mockcfg],
             {'pkg1', 'pkg2', 'python-nose', 'python3-nose'},
             'not installed')
 
@@ -1140,11 +1224,12 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
-        with self.patch(tempfile.gettempdir(), 'root', pep_exitout=(0, b'')):
-            output = dnf_ci.api.pep8_isolated(tempfile.gettempdir(), 'root')
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
+        with self.patch(tempfile.gettempdir(), mockcfg, pep_exitout=(0, b'')):
+            output = dnf_ci.api.pep8_isolated(tempfile.gettempdir(), mockcfg)
         self.assertEqual(output, b'', 'incorrect output')
         self.assertEqual(
-            self.root2packages['root'], {'python-pep8', 'python3-pep8'},
+            self.cfg2packages[mockcfg], {'python-pep8', 'python3-pep8'},
             'not installed')
 
     def test_pep8_isolated_failing(self):
@@ -1154,17 +1239,18 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
 
         """
         cwd = tempfile.gettempdir()
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         output = (
             cwd.encode() + b':1:80: E501 line too long (80 > 79 characters)\n')
         with self.assertRaises(subprocess.CalledProcessError) as context:
-            with self.patch(cwd, 'root', pep_exitout=(1, output)):
-                dnf_ci.api.pep8_isolated(cwd, 'root')
+            with self.patch(cwd, mockcfg, pep_exitout=(1, output)):
+                dnf_ci.api.pep8_isolated(cwd, mockcfg)
         self.assertEqual(
             context.exception.returncode, 1, 'incorrect status')
         self.assertEqual(
             context.exception.output, output * 2, 'incorrect output')
         self.assertEqual(
-            self.root2packages['root'], {'python-pep8', 'python3-pep8'},
+            self.cfg2packages[mockcfg], {'python-pep8', 'python3-pep8'},
             'not installed')
 
     def test_pyflakes_isolated_successful(self):  # pylint: disable=C0103
@@ -1174,11 +1260,12 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
 
         """
         cwd = tempfile.gettempdir()
-        with self.patch(cwd, 'root', flakes_exitout=(0, b'')):
-            output = dnf_ci.api.pyflakes_isolated(cwd, 'root')
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
+        with self.patch(cwd, mockcfg, flakes_exitout=(0, b'')):
+            output = dnf_ci.api.pyflakes_isolated(cwd, mockcfg)
         self.assertEqual(output, b'', 'incorrect output')
         self.assertEqual(
-            self.root2packages['root'], {'pyflakes', 'python3-pyflakes'},
+            self.cfg2packages[mockcfg], {'pyflakes', 'python3-pyflakes'},
             'not installed')
 
     def test_pyflakes_isolated_failing(self):
@@ -1188,16 +1275,17 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
 
         """
         cwd = tempfile.gettempdir()
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         output = cwd.encode() + b":1: 'unittest' imported but unused\n"
         with self.assertRaises(subprocess.CalledProcessError) as context:
-            with self.patch(cwd, 'root', flakes_exitout=(1, output)):
-                dnf_ci.api.pyflakes_isolated(cwd, 'root')
+            with self.patch(cwd, mockcfg, flakes_exitout=(1, output)):
+                dnf_ci.api.pyflakes_isolated(cwd, mockcfg)
         self.assertEqual(
             context.exception.returncode, 1, 'incorrect status')
         self.assertEqual(
             context.exception.output, output * 2, 'incorrect output')
         self.assertEqual(
-            self.root2packages['root'], {'pyflakes', 'python3-pyflakes'},
+            self.cfg2packages[mockcfg], {'pyflakes', 'python3-pyflakes'},
             'not installed')
 
     def test_pylint_isolated_successful(self):
@@ -1206,15 +1294,16 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         patcher = self.patch(
-            tempfile.gettempdir(), 'root', lint_reldns=['d1', 'd2'],
+            tempfile.gettempdir(), mockcfg, lint_reldns=['d1', 'd2'],
             lint_exitout=(0, b''))
         with patcher:
             output = dnf_ci.api.pylint_isolated(
-                ['d1', 'd2'], tempfile.gettempdir(), ['p1', 'p2'], 'root')
+                ['d1', 'd2'], tempfile.gettempdir(), ['p1', 'p2'], mockcfg)
         self.assertEqual(output, b'', 'incorrect output')
         self.assertEqual(
-            self.root2packages['root'],
+            self.cfg2packages[mockcfg],
             {'p1', 'p2', 'pylint', 'python3-pylint'},
             'not installed')
 
@@ -1224,22 +1313,23 @@ class MockTestCase(_MockResultsTestCase):  # pylint: disable=R0904
         :raise AssertionError: if the test fails
 
         """
+        mockcfg = os.path.join(tempfile.gettempdir(), 'root.cfg')
         output = (
             tempfile.gettempdir().encode() +
             b'/d1:1: [E0001(syntax-error), ] invalid syntax\n')
         patcher = self.patch(
-            tempfile.gettempdir(), 'root', lint_reldns=['d1', 'd2'],
+            tempfile.gettempdir(), mockcfg, lint_reldns=['d1', 'd2'],
             lint_exitout=(1, output))
         with self.assertRaises(subprocess.CalledProcessError) as context:
             with patcher:
                 dnf_ci.api.pylint_isolated(
-                    ['d1', 'd2'], tempfile.gettempdir(), ['p1', 'p2'], 'root')
+                    ['d1', 'd2'], tempfile.gettempdir(), ['p1', 'p2'], mockcfg)
         self.assertEqual(
             context.exception.returncode, 1, 'incorrect status')
         self.assertEqual(
             context.exception.output, output * 2, 'incorrect output')
         self.assertEqual(
-            self.root2packages['root'],
+            self.cfg2packages[mockcfg],
             {'p1', 'p2', 'pylint', 'python3-pylint'},
             'not installed')
 
