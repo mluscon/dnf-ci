@@ -974,6 +974,43 @@ class GitExecutableTestCase(unittest.TestCase):  # pylint: disable=R0904
             'not cloned')
 
 
+class TestCase(unittest.TestCase):  # pylint: disable=too-many-public-methods
+
+    """A test case."""
+
+    def test_write_mockcfg_x86_64(self):
+        """Test writing with the x86_64 architecture.
+
+        :raise AssertionError: if the test fails
+
+        """
+        file = io.StringIO()
+        dnf_ci.api.write_mockcfg(file, 'x86_64')
+        self.assertEqual(
+            file.getvalue(),
+            dnf_ci.api.MOCK_CFG_PATTERN.format(
+                arch='x86_64', target='x86_64', legal="('x86_64',)") +
+            '\n',
+            'not written')
+
+    def test_write_mockcfg_i386(self):
+        """Test writing with the i386 architecture.
+
+        :raise AssertionError: if the test fails
+
+        """
+        file = io.StringIO()
+        dnf_ci.api.write_mockcfg(file, 'i386')
+        self.assertEqual(
+            file.getvalue(),
+            dnf_ci.api.MOCK_CFG_PATTERN.format(
+                arch='i386',
+                target='i686',
+                legal="('i386', 'i586', 'i686', 'x86_64')",) +
+            '\n',
+            'not written')
+
+
 class DNFBuildTestCase(_MockResultsTestCase):  # pylint: disable=R0904
 
     """DNF build environment test case."""

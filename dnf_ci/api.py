@@ -15,7 +15,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Application programming interface of the program."""
+"""Application programming interface of the program.
+
+:var MOCK_CFG_PATTERN: string pattern for a DNF Mock configuration file
+:type MOCK_CFG_PATTERN: str
+
+"""
 
 
 from __future__ import absolute_import
@@ -26,6 +31,51 @@ import fileinput
 import itertools
 import os
 import subprocess
+
+
+MOCK_CFG_PATTERN = (
+    "config_opts['root'] = 'fedora-21-{arch}-dnf'\n"
+    "config_opts['target_arch'] = '{target}'\n"
+    "config_opts['legal_host_arches'] = {legal}\n"
+    "config_opts['chroot_setup_cmd'] = 'install @buildsys-build'\n"
+    "config_opts['dist'] = 'fc21'\n"
+    "config_opts['extra_chroot_dirs'] = [ '/run/lock', ]\n"
+    "config_opts['releasever'] = '21'\n"
+    '\n'
+    "config_opts['yum.conf'] = \"\"\"\n"
+    '[main]\n'
+    'cachedir=/var/cache/yum\n'
+    'debuglevel=1\n'
+    'reposdir=/dev/null\n'
+    'logfile=/var/log/yum.log\n'
+    'retries=20\n'
+    'obsoletes=1\n'
+    'gpgcheck=0\n'
+    'assumeyes=1\n'
+    'syslog_ident=mock\n'
+    'syslog_device=\n'
+    '\n'
+    '[fedora]\n'
+    'name=fedora\n'
+    'mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?'
+    'repo=fedora-21&arch={arch}\n'
+    'failovermethod=priority\n'
+    'exclude=dnf\n'
+    '\n'
+    '[updates]\n'
+    'name=updates\n'
+    'mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?'
+    'repo=updates-released-f21&arch={arch}\n'
+    'failovermethod=priority\n'
+    'exclude=dnf\n'
+    '\n'
+    '[updates-testing]\n'
+    'name=updates-testing\n'
+    'mirrorlist=http://mirrors.fedoraproject.org/mirrorlist?'
+    'repo=updates-testing-f21&arch={arch}\n'
+    'failovermethod=priority\n'
+    'exclude=dnf\n'
+    '"""\n')
 
 
 def uncommitted_changes(repository):
@@ -58,6 +108,24 @@ def clone(source, target):
 
     """
     subprocess.call(['git', 'clone', '--quiet', source, target])
+
+
+def write_mockcfg(file, arch):
+    """Write a DNF Mock configuration into a file.
+
+    :param file: the writable file
+    :type file: io.TextIOBase
+    :param arch: one of the following architectures to be used: x86_64 or i386
+    :type arch: str
+
+    """
+    arch2legal = {
+        'x86_64': "('x86_64',)", 'i386': "('i386', 'i586', 'i686', 'x86_64')"}
+    arch2target = {'x86_64': 'x86_64', 'i386': 'i686'}
+    print(
+        MOCK_CFG_PATTERN.format(
+            arch=arch, legal=arch2legal[arch], target=arch2target[arch]),
+        file=file)
 
 
 def build_dnf(source, destination, mockcfg):
