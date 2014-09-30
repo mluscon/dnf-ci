@@ -20,15 +20,13 @@
 The command-line interface usage is::
 
     usage: PROG [-h] [-v] [-r DIRNAME] [-8 FILENAME] [-f FILENAME]
-                [-l FILENAME]
-                SOURCE MOCKCFG
+                [-l FILENAME] [-a {x86_64,i386}]
+                SOURCE
 
     Test a DNF Git repository.
 
     positional arguments:
       SOURCE                name of a readable DNF Git repository
-      MOCKCFG               name of a configuration file specifying a writable
-                            Mock root
 
     optional arguments:
       -h, --help            show this help message and exit
@@ -41,6 +39,9 @@ The command-line interface usage is::
                             name of a writable file for the Pyflakes output
       -l FILENAME, --pylint FILENAME
                             name of a writable file for the Pylint output
+      -a {x86_64,i386}, --arch {x86_64,i386}
+                            name of the supported testing architecture to be
+                            used
 
     It is assumed that the workflow to make a DNF's SRPM is to build DNF, run
     "package/archive", change the value of "gitrev" variable at the first line
@@ -48,11 +49,14 @@ The command-line interface usage is::
     the sources path set to "$HOME/rpmbuild/SOURCES". It is also assumed that
     it is enough to run Pylint on the "dnf" and "tests" subdirectories and to
     run Nose on the "tests" subdirectory. "cmake", "git" and "mock" executables
-    must be available. Standard output and standard error must be writable. The
-    Mock root may be modified. Program cannot be called by a superuser. If the
-    source repository contains uncommitted changes or the tests fail, the exit
-    status is 1. If the command line is not valid, the exit status is 2.
-    Otherwise, a status of 0 is returned.
+    must be available. Standard output and standard error must be writable.
+    Mock roots must be writable and the existing roots may be modified. Program
+    cannot be called by a superuser. If multiple architectures are given, the
+    Pep8, Pyflakes and Pylint output files will contain just the output of the
+    run for the last (in alphabetical order) architecture. If the source
+    repository contains uncommitted changes or the tests fail, the exit status
+    is 1. If the command line is not valid, the exit status is 2. Otherwise, a
+    status of 0 is returned.
 
 """
 
@@ -104,8 +108,8 @@ class _OutputConf(object):  # pylint: disable=too-few-public-methods
         self.pylintfn = pylintfn
 
 
-def _test_in_root(repository, mockcfg, outconf):
-    """Test a DNF Git repository within a Mock root.
+def _test_on_arch(repository, arch, outconf):
+    """Test a DNF Git repository on an architecture.
 
     It is assumed that the workflow is to build DNF, run "package/archive",
     change the value of "gitrev" variable at the first line of
@@ -113,16 +117,16 @@ def _test_in_root(repository, mockcfg, outconf):
     the sources path set to "$HOME/rpmbuild/SOURCES". It is also assumed that
     it is enough to run Pylint on the "dnf" and "tests" subdirectories and to
     run Nose on the "tests" subdirectory. "cmake", "git" and "mock" executables
-    must be available. Standard output and standard error must be writable. The
-    Mock root may be modified. This function cannot be called by a superuser.
-    If the tests fail, the exit status is 1. Otherwise, a status of 0 is
-    returned.
+    must be available. Standard output and standard error must be writable.
+    Mock roots must be writable and the existing roots may be modified. This
+    function cannot be called by a superuser. If the tests fail, the exit
+    status is 1. Otherwise, a status of 0 is returned.
 
     :param repository: name of the readable DNF Git repository
     :type repository: str
-    :param mockcfg: name of a configuration file specifying the writable Mock
-       root
-    :type mockcfg: str
+    :param arch: the one of the following architectures to be used: x86_64 or
+       i386
+    :type arch: str
     :param outconf: program output configuration
     :type outconf: dnf_ci.cli._OutputConf
     :return: the exit status
@@ -133,13 +137,17 @@ def _test_in_root(repository, mockcfg, outconf):
         clonedn = os.path.join(dirname, 'repo-dnf')
         dnf_ci.api.clone(repository, clonedn)
         srpmdn = os.path.join(dirname, 'srpms')
+        mockcfg = os.path.join(dirname, arch + '.cfg')
+        with open(mockcfg, 'w', encoding='utf-8') as file:
+            dnf_ci.api.write_mockcfg(file, arch)
         dnf_ci.api.build_dnf(clonedn, srpmdn, mockcfg)
         srpms = (
             os.path.join(root_dirs_files[0], basename)
             for root_dirs_files in os.walk(srpmdn)
             for basename in root_dirs_files[2]
             if basename.endswith('.src.rpm'))
-        rpmdn = outconf.rpmdn or os.path.join(dirname, 'rpms')
+        rpmdn = os.path.join(
+            outconf.rpmdn or os.path.join(dirname, 'rpms'), arch)
         try:
             dnf_ci.api.build_rpm(next(srpms), rpmdn, mockcfg)
         except ValueError:
@@ -186,15 +194,13 @@ def main():
     The command-line interface usage is::
 
         usage: PROG [-h] [-v] [-r DIRNAME] [-8 FILENAME] [-f FILENAME]
-                    [-l FILENAME]
-                    SOURCE MOCKCFG
+                    [-l FILENAME] [-a {x86_64,i386}]
+                    SOURCE
 
         Test a DNF Git repository.
 
         positional arguments:
           SOURCE                name of a readable DNF Git repository
-          MOCKCFG               name of a configuration file specifying a
-                                writable Mock root
 
         optional arguments:
           -h, --help            show this help message and exit
@@ -207,6 +213,9 @@ def main():
                                 name of a writable file for the Pyflakes output
           -l FILENAME, --pylint FILENAME
                                 name of a writable file for the Pylint output
+          -a {x86_64,i386}, --arch {x86_64,i386}
+                                name of the supported testing architecture to
+                                be used
 
         It is assumed that the workflow to make a DNF's SRPM is to build DNF,
         run "package/archive", change the value of "gitrev" variable at the
@@ -215,11 +224,14 @@ def main():
         also assumed that it is enough to run Pylint on the "dnf" and "tests"
         subdirectories and to run Nose on the "tests" subdirectory. "cmake",
         "git" and "mock" executables must be available. Standard output and
-        standard error must be writable. The Mock root may be modified. Program
-        cannot be called by a superuser. If the source repository contains
-        uncommitted changes or the tests fail, the exit status is 1. If the
-        command line is not valid, the exit status is 2. Otherwise, a status of
-        0 is returned.
+        standard error must be writable. Mock roots must be writable and the
+        existing roots may be modified. Program cannot be called by a
+        superuser. If multiple architectures are given, the Pep8, Pyflakes and
+        Pylint output files will contain just the output of the run for the
+        last (in alphabetical order) architecture. If the source repository
+        contains uncommitted changes or the tests fail, the exit status is 1.
+        If the command line is not valid, the exit status is 2. Otherwise, a
+        status of 0 is returned.
 
     :raise SystemExit: with integer exit status at the end of the execution
 
@@ -234,9 +246,12 @@ def main():
         'run Pylint on the "dnf" and "tests" subdirectories and to run Nose on'
         ' the "tests" subdirectory. "cmake", "git" and "mock" executables must'
         ' be available. Standard output and standard error must be writable. '
-        'The Mock root may be modified. Program cannot be called by a '
-        'superuser. If the source repository contains uncommitted changes or '
-        'the tests fail, the exit status is 1. If the command line is not '
+        'Mock roots must be writable and the existing roots may be modified. '
+        'Program cannot be called by a superuser. If multiple architectures '
+        'are given, the Pep8, Pyflakes and Pylint output files will contain '
+        'just the output of the run for the last (in alphabetical order) '
+        'architecture. If the source repository contains uncommitted changes '
+        'or the tests fail, the exit status is 1. If the command line is not '
         'valid, the exit status is 2. Otherwise, a status of 0 is returned.')
     parser.add_argument(
         '-v', '--version', action='version',
@@ -255,10 +270,11 @@ def main():
         '-l', '--pylint', help='name of a writable file for the Pylint output',
         metavar='FILENAME')
     parser.add_argument(
-        'SOURCE', help='name of a readable DNF Git repository')
+        '-a', '--arch', action='append', default=[],
+        choices=['x86_64', 'i386'],
+        help='name of the supported testing architecture to be used')
     parser.add_argument(
-        'MOCKCFG',
-        help='name of a configuration file specifying a writable Mock root')
+        'SOURCE', help='name of a readable DNF Git repository')
     arguments = parser.parse_args()
 
     if dnf_ci.api.uncommitted_changes(arguments.SOURCE):
@@ -266,7 +282,11 @@ def main():
         sys.exit(1)
     outconf = _OutputConf(
         arguments.rpms, arguments.pep8, arguments.pyflakes, arguments.pylint)
-    sys.exit(_test_in_root(arguments.SOURCE, arguments.MOCKCFG, outconf))
+    status = 0
+    for arch in sorted(set(arguments.arch)):
+        print('Current testing architecture: ' + arch)
+        status = _test_on_arch(arguments.SOURCE, arch, outconf) or status
+    sys.exit(status)
 
 
 if __name__ == '__main__':
