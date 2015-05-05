@@ -23,7 +23,7 @@ mock --quiet --configdir="$1" --root="$2" --init
 mock --quiet --configdir="$1" --root="$2" --chroot "rm --recursive --force '$MOCK_DIR'"
 mock --quiet --configdir="$1" --root="$2" --copyin . "$MOCK_DIR"
 mock --quiet --configdir="$1" --root="$2" --chroot "chown --recursive :mockbuild '$MOCK_DIR'"
-mock --quiet --configdir="$1" --root="$2" --install git yum-utils tito ${*:4}
+mock --quiet --configdir="$1" --root="$2" --install -v git yum-utils tito ${*:4}
 
 # Get GIT revision hash.
 git --version >>/dev/null 2>&1; GIT_EXIT=$?
