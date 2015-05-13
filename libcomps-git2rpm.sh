@@ -51,7 +51,7 @@ SPEC_PATH=libcomps.spec
 SRPM_DIR=.
 SRPM_GLOB="$SRPM_DIR"/libcomps-*.src.rpm
 rm --force "$SRPM_DIR"/$SRPM_GLOB
-mock --quiet --configdir="$1" --root="$2" --buildsrpm --spec "$SPEC_PATH" --sources "$SRC_DIR"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --buildsrpm --spec "$SPEC_PATH" --sources "$SRC_DIR"
 mv "/var/lib/mock/$2/result"/$SRPM_GLOB "$SRPM_DIR"
 
 # Build the RPMs.

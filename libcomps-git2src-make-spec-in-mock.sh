@@ -19,19 +19,19 @@
 # Red Hat, Inc.
 
 MOCK_DIR=/tmp/libcomps-git2src-make-spec-in-mock
-mock --quiet --configdir="$1" --root="$2" --chroot "rm --recursive --force '$MOCK_DIR'"
-mock --quiet --configdir="$1" --root="$2" --copyin . "$MOCK_DIR"
-mock --quiet --configdir="$1" --root="$2" --chroot "chown --recursive :mockbuild '$MOCK_DIR'"
-mock --quiet --configdir="$1" --root="$2" --install python git
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --chroot "rm --recursive --force '$MOCK_DIR'"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --copyin . "$MOCK_DIR"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --chroot "chown --recursive :mockbuild '$MOCK_DIR'"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --install python git
 
-mock --quiet --configdir="$1" --root="$2" --unpriv --shell "cd '$MOCK_DIR' && ./build_prep.py"; EXIT=$?
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --unpriv --shell "cd '$MOCK_DIR' && ./build_prep.py"; EXIT=$?
 
 TMP_DIR=/tmp
 TMP_HOME="$TMP_DIR"/libcomps-git2src-make-spec-in-mock
 mkdir --parents "$TMP_DIR"
 chmod a+rwx "$TMP_DIR"
 rm --recursive --force "$TMP_HOME"
-mock --quiet --configdir="$1" --root="$2" --copyout "$MOCK_DIR" "$TMP_HOME"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --copyout "$MOCK_DIR" "$TMP_HOME"
 mv "$TMP_HOME"/libcomps-*.tar.gz .
 mv "$TMP_HOME/libcomps.spec" .
 exit $EXIT

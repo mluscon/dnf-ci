@@ -32,9 +32,9 @@ case "$GIT_EXIT" in
 	0)	GITREV=$(git rev-parse HEAD);;
 	# GIT is not installed.
 	127)	echo "WARNING: git is not installed => using mock" 1>&2
-		GITREV=$(mock --quiet --configdir="$1" --root="$2" --unpriv --chroot "git -C '$MOCK_DIR' rev-parse HEAD");;
+		GITREV=$(/usr/bin/mock --quiet --configdir="$1" --root="$2" --unpriv --chroot "git -C '$MOCK_DIR' rev-parse HEAD");;
 esac
 
 # Build the RPMs.
-mock --quiet --configdir="$1" --root="$2" --chroot "yum-builddep '$MOCK_DIR/dnf.spec'"
-mock --quiet --configdir="$1" --root="$2" --unpriv --chroot "cd $MOCK_DIR; tito build --debug --rpm --test --no-cleanup --rpmbuild-options=\"--define='snapshot .$3.%(date +%%Y%%m%%d)git$GITREV'\""
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --chroot "yum-builddep '$MOCK_DIR/dnf.spec'"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --unpriv --chroot "cd $MOCK_DIR; tito build --debug --rpm --test --no-cleanup --rpmbuild-options=\"--define='snapshot .$3.%(date +%%Y%%m%%d)git$GITREV'\""
