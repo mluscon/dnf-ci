@@ -27,7 +27,7 @@ echo "Testing all projects and code using $1..."
 echo "Initializing the $MOCK_CFG mock..."
 cp /etc/mock/site-defaults.cfg .
 cp /etc/mock/logging.ini .
-mock --quiet --configdir=. --root="$MOCK_CFG" --init
+/usr/bin/mock --quiet --configdir=. --root="$MOCK_CFG" --init
 echo "...initialization done."
 
 # Build hawkey.
@@ -82,6 +82,7 @@ rm --force "/tmp/tito"/*dnf-*"$RPMS_SUFFIX"
 #mock --quiet --configdir=.. --root="$MOCK_CFG" --copyout /builddir/build/BUILD/dnf "../$DNF_BUILD2"
 #mv "../$DNF_BUILD2/py3" "../$DNF_BUILD3"
 mv "/tmp/tito"/*dnf-*"$RPMS_SUFFIX" "../$RPMS_DIR"
+
 cd ..
 if [ $DNF_EXIT -eq 0 ]; then
 	echo "...build succeeded."
@@ -98,7 +99,9 @@ rm --force "/tmp/tito"/*dnf-plugins-core-*"$RPMS_SUFFIX"
 ./dnf-plugins-git2rpm.sh .. "$MOCK_CFG" "$2" "../$RPMS_DIR"/*"$RPMS_SUFFIX" > ../dnf-plugins-core-build.log 2>&1; PLUGINS_EXIT=$?
 #rm --recursive --force "../$PLUGINS_BUILD"
 #mock --quiet --configdir=.. --root="$MOCK_CFG" --copyout /builddir/build/BUILD/dnf-plugins-core "../$PLUGINS_BUILD"
+
 mv "/tmp/tito"/*dnf-plugins-core-*"$RPMS_SUFFIX" "../$RPMS_DIR"
+
 cd ..
 if [ $PLUGINS_EXIT -eq 0 ]; then
 	echo "...build succeeded."
@@ -108,8 +111,8 @@ fi
 
 # Test builds.
 echo "Running tests in $MOCK_CFG mock..."
-mock --quiet --configdir=. --root="$MOCK_CFG" --init
-mock --quiet --configdir=. --root="$MOCK_CFG" --install "$RPMS_DIR"/*"$RPMS_SUFFIX"
+/usr/bin/mock --quiet --configdir=. --root="$MOCK_CFG" --init
+/usr/bin/mock --quiet --configdir=. --root="$MOCK_CFG" --install "$RPMS_DIR"/*"$RPMS_SUFFIX"
 #cd "$DNF_BUILD2" # dnf python 2
 #cp ../test-python-project.sh ../test-python2-code.sh .
 DNF_TESTS2_EXIT=0

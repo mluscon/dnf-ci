@@ -21,3 +21,4 @@
 GITREV=$(git rev-parse HEAD)
 #tito does not accept = in mock_args (see https://bugzilla.redhat.com/show_bug.cgi?id=1205823)
 ./tito2rpm-with-deps.sh "--define 'snapshot .$3.%(date +%%Y%%m%%d)git$GITREV'" "$1" "$2" ${*:4}
+
