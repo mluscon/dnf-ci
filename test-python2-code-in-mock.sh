@@ -19,12 +19,12 @@
 # Red Hat, Inc.
 
 MOCK_DIR=/tmp/test-python2-code-in-mock
-mock --quiet --configdir="$1" --root="$2" --chroot "rm --recursive --force '$MOCK_DIR'"
-mock --quiet --configdir="$1" --root="$2" --copyin . "$MOCK_DIR"
-mock --quiet --configdir="$1" --root="$2" --chroot "chmod --recursive a+rwx '$MOCK_DIR'"
-mock --quiet --configdir="$1" --root="$2" --install python-pep8 pyflakes pylint
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --chroot "rm --recursive --force '$MOCK_DIR'"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --copyin . "$MOCK_DIR"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --chroot "chmod --recursive a+rwx '$MOCK_DIR'"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --install python-pep8 pyflakes pylint
 
-mock --quiet --configdir="$1" --root="$2" --unpriv --shell "cd '$MOCK_DIR'; ./test-python2-code.sh"; EXIT=$?
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --unpriv --shell "cd '$MOCK_DIR'; ./test-python2-code.sh"; EXIT=$?
 
-mock --quiet --configdir="$1" --root="$2" --copyout "$MOCK_DIR/pep8.log" "$MOCK_DIR/pyflakes.log" "$MOCK_DIR/pylint.log" .
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --copyout "$MOCK_DIR/pep8.log" "$MOCK_DIR/pyflakes.log" "$MOCK_DIR/pylint.log" .
 exit $EXIT

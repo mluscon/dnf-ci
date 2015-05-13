@@ -19,9 +19,9 @@
 # Red Hat, Inc.
 
 MOCK_DIR=/tmp/test-python-project-in-mock
-mock --quiet --configdir="$3" --root="$4" --chroot "rm --recursive --force '$MOCK_DIR'"
-mock --quiet --configdir="$3" --root="$4" --copyin . "$MOCK_DIR"
-mock --quiet --configdir="$3" --root="$4" --chroot "chown --recursive :mockbuild '$MOCK_DIR'"
-mock --quiet --configdir="$3" --root="$4" --install python-nose python3-nose
+/usr/bin/mock --quiet --configdir="$3" --root="$4" --chroot "rm --recursive --force '$MOCK_DIR'"
+/usr/bin/mock --quiet --configdir="$3" --root="$4" --copyin . "$MOCK_DIR"
+/usr/bin/mock --quiet --configdir="$3" --root="$4" --chroot "chown --recursive :mockbuild '$MOCK_DIR'"
+/usr/bin/mock --quiet --configdir="$3" --root="$4" --install python-nose python3-nose
 
-mock --quiet --configdir="$3" --root="$4" --unpriv --shell "cd '$MOCK_DIR'; ./test-python-project.sh '$1' '$2'"
+/usr/bin/mock --quiet --configdir="$3" --root="$4" --unpriv --shell "cd '$MOCK_DIR'; ./test-python-project.sh '$1' '$2'"

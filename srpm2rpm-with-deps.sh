@@ -18,12 +18,12 @@
 # License and may only be used or replicated with the express permission of
 # Red Hat, Inc.
 
-mock --quiet --configdir="$2" --root="$3" --init
+/usr/bin/mock --quiet --configdir="$2" --root="$3" --init
 
 # Install dependencies.
 if [ $# -gt 3 ]; then
-	mock --quiet --configdir="$2" --root="$3" --install ${*:4};
+	/usr/bin/mock --quiet --configdir="$2" --root="$3" --install ${*:4};
 fi
 
 # Build RPM.
-eval mock --quiet --configdir="$2" --root="$3" --no-clean $1
+eval /usr/bin/mock --quiet --configdir="$2" --root="$3" --no-clean $1

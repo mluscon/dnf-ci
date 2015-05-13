@@ -19,20 +19,20 @@
 # Red Hat, Inc.
 
 MOCK_DIR=/tmp/librepo-git2rpm
-mock --quiet --configdir="$1" --root="$2" --chroot "rm --recursive --force '$MOCK_DIR'"
-mock --quiet --configdir="$1" --root="$2" --copyin . "$MOCK_DIR"
-mock --quiet --configdir="$1" --root="$2" --chroot "chown --recursive :mockbuild '$MOCK_DIR'"
-mock --quiet --configdir="$1" --root="$2" --chroot "chmod --recursive +w '$MOCK_DIR'"
-mock --quiet --configdir="$1" --root="$2" --install wget yum git check-devel cmake expat-devel gcc glib2-devel gpgme-devel libattr-devel libcurl-devel openssl-devel python-devel python3-devel pygpgme python3-pygpgme python-flask python3-flask python-nose python3-nose pyxattr python3-pyxattr doxygen python-sphinx python3-sphinx
-mock --quiet --configdir="$1" --root="$2" --chroot "ln --symbolic --force /builddir/build \"\$HOME/rpmbuild\""
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --chroot "rm --recursive --force '$MOCK_DIR'"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --copyin . "$MOCK_DIR"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --chroot "chown --recursive :mockbuild '$MOCK_DIR'"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --chroot "chmod --recursive +w '$MOCK_DIR'"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --install wget yum git check-devel cmake expat-devel gcc glib2-devel gpgme-devel libattr-devel libcurl-devel openssl-devel python-devel python3-devel pygpgme python3-pygpgme python-flask python3-flask python-nose python3-nose pyxattr python3-pyxattr doxygen python-sphinx python3-sphinx
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --chroot "ln --symbolic --force /builddir/build \"\$HOME/rpmbuild\""
 
 # Install dependencies.
 if [ $# -gt 2 ]; then
-	mock --quiet --configdir="$1" --root="$2" --install ${*:4};
+	/usr/bin/mock --quiet --configdir="$1" --root="$2" --install ${*:4};
 fi
 
 # Build RPM.
-mock --quiet --configdir="$1" --root="$2" --unpriv --shell "cd '$MOCK_DIR' && ./librepo-git2rpm.sh '$3'"; EXIT=$?
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --unpriv --shell "cd '$MOCK_DIR' && ./librepo-git2rpm.sh '$3'"; EXIT=$?
 
 TMP_DIR=/tmp/librepo-git2rpm
 TMP_HOME="$TMP_DIR"/home
@@ -41,9 +41,9 @@ RPMS_DIR="$HOME/rpmbuild/RPMS"
 mkdir --parents "$TMP_DIR"
 chmod a+rwx "$TMP_DIR"
 rm --recursive --force "$TMP_HOME" "$TMP_RPMS"
-mock --quiet --configdir="$1" --root="$2" --copyout "$MOCK_DIR" "$TMP_HOME"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --copyout "$MOCK_DIR" "$TMP_HOME"
 mv "$TMP_HOME"/librepo-*.src.rpm .
-mock --quiet --configdir="$1" --root="$2" --copyout "/builddir/build/RPMS" "$TMP_RPMS"
+/usr/bin/mock --quiet --configdir="$1" --root="$2" --copyout "/builddir/build/RPMS" "$TMP_RPMS"
 mkdir --parents "$RPMS_DIR"
 mv "$TMP_RPMS"/*librepo-*.rpm "$RPMS_DIR"
 exit $EXIT
